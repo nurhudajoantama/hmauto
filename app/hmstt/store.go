@@ -17,21 +17,26 @@ func NewStore(db *gorm.DB) *hmsttStore {
 	return &hmsttStore{db: db}
 }
 
-func (s *hmsttStore) SetStateTx(ctx context.Context, tx *gorm.DB, key string, value string) error {
-	state := &hmsttState{
-		Key:   key,
-		Value: value,
-	}
+func (s *hmsttStore) SetStateTx(ctx context.Context, tx *gorm.DB, state *hmsttState) error {
 	return tx.WithContext(ctx).Save(state).Error
 }
 
-func (s *hmsttStore) GetState(ctx context.Context, key string) (string, error) {
+func (s *hmsttStore) GetState(ctx context.Context, key string) (hmsttState, error) {
 	var state hmsttState
 	err := s.db.WithContext(ctx).First(&state, "key = ?", key).Error
 	if err != nil {
-		return "", err
+		return hmsttState{}, err
 	}
-	return state.Value, nil
+	return state, nil
+}
+
+func (s *hmsttStore) GetAllStates(ctx context.Context) ([]hmsttState, error) {
+	var states []hmsttState
+	err := s.db.WithContext(ctx).Order("key asc").Find(&states).Error
+	if err != nil {
+		return nil, err
+	}
+	return states, nil
 }
 
 func (s *hmsttStore) Transaction() (tx *gorm.DB) {

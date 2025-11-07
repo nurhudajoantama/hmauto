@@ -28,3 +28,25 @@ func canTypeChangedWithKey(tipe, key, value string) (string, bool) {
 
 	return "", false
 }
+
+func snakeToTitle(s string) string {
+	result := ""
+	capitalizeNext := true
+
+	for _, char := range s {
+		if char == '_' {
+			result += " "
+			capitalizeNext = true
+		} else {
+			if capitalizeNext {
+				if char >= 'a' && char <= 'z' {
+					char -= 'a' - 'A'
+				}
+				capitalizeNext = false
+			}
+			result += string(char)
+		}
+	}
+
+	return result
+}

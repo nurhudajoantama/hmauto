@@ -6,6 +6,7 @@ const (
 	PREFIX_HMSTT  = "hmstt"
 	PREFIX_SWITCH = "switch"
 
+	HTML_TEMPLATE_PATTERN       = "views/hmstt/*.html"
 	HTML_TEMPLATE_SWITCH        = "switch.html"
 	HTML_TEMPLATE_NOTFOUND_TYPE = "notfoundtipe.html"
 

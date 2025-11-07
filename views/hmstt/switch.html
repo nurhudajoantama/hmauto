@@ -1,15 +1,15 @@
-<form hx-post="/hmstt/setstatehtml/switch/{{.key}}" hx-swap="outerHTML" class="col-sm-3 mb-2">
+<form hx-post="/hmstt/setstatehtml/switch/{{.K}}" hx-swap="outerHTML" class="col-sm-3 mb-2">
 
     <!-- BERIKUTNYA BIKIN BUTTON UNTUK SWITCH ON/OFF -->
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             <div>
-                <strong>{{.key | html}}</strong>
+                <strong>{{.Title | html}}</strong>
             </div>
             <div>
-                {{if eq .state "on"}}
+                {{if eq .Value "on"}}
                 <span class="badge bg-success">ON</span>
-                {{else if eq .state "off"}}
+                {{else if eq .Value "off"}}
                 <span class="badge bg-secondary">OFF</span>
                 {{else}}
                 <span class="badge bg-warning text-dark">Unknown</span>
@@ -18,12 +18,12 @@
         </div>
 
         <div class="card-body">
-            {{if eq .state "on"}}
+            {{if eq .Value "on"}}
             <input type="hidden" name="value" value="off" />
             <button type="submit" class="btn btn-danger">
                 <i class="bi bi-power"></i> Turn OFF
             </button>
-            {{else if eq .state "off"}}
+            {{else if eq .Value "off"}}
             <input type="hidden" name="value" value="on" />
             <button type="submit" class="btn btn-success">
                 <i class="bi bi-power"></i> Turn ON

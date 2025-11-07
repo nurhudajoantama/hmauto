@@ -40,7 +40,7 @@ func New(addr string) *Server {
 
 	// public routes
 	r.HandleFunc("/healthz", healthHandler).Methods("GET")
-	r.HandleFunc("/", helloHandler).Methods("GET")
+	r.HandleFunc("/hello", helloHandler).Methods("GET")
 
 	// instrument the router with OpenTelemetry HTTP middleware
 

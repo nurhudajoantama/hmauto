@@ -14,16 +14,17 @@ type hmsttHandler struct {
 }
 
 func RegisterHandlers(s *server.Server, svc *hmsttService) {
-	templates := template.Must(template.ParseGlob("app/hmstt/views/*.html"))
+	templates := template.Must(template.ParseGlob(HTML_TEMPLATE_PATTERN))
 
 	h := &hmsttHandler{
 		service:   svc,
 		templates: templates,
 	}
 	srv := s.GetRouter()
+	srv.HandleFunc("/", h.handleIndex).Methods("GET")
 
 	hmsttGroup := srv.PathPrefix("/hmstt").Subrouter()
-	hmsttGroup.HandleFunc("/", h.handleIndex)
+	hmsttGroup.HandleFunc("/", h.handleIndex).Methods("GET")
 	hmsttGroup.HandleFunc("/statehtml/{type}/{key}", h.handleGetStateHTML).Methods("GET")
 	hmsttGroup.HandleFunc("/setstatehtml/{type}/{key}", h.handleSetStateHTML).Methods("POST")
 
@@ -47,7 +48,17 @@ func (h *hmsttHandler) handleGetState(w http.ResponseWriter, r *http.Request) {
 
 // handleIndex serves the main (and only) HTML page
 func (h *hmsttHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if err := h.templates.ExecuteTemplate(w, "index.html", nil); err != nil {
+	// Provide a Servers slice to the template so index.html can render switch placeholders dynamically.
+	data := map[string]interface{}{
+		"states": []hmsttState{},
+	}
+
+	states, err := h.service.GetAllStates(r.Context())
+	if err == nil {
+		data["states"] = states
+	}
+
+	if err := h.templates.ExecuteTemplate(w, "index.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -58,15 +69,15 @@ func (h *hmsttHandler) handleGetStateHTML(w http.ResponseWriter, r *http.Request
 	key := p["key"]
 	tipe := p["type"]
 
-	var state string
-	results, err := h.service.GetState(r.Context(), tipe, key)
+	var state hmsttState
+	results, err := h.service.GetStateDetail(r.Context(), tipe, key)
 	if err != nil {
-		state = ERR_STRING
+		state = hmsttState{Value: ERR_STRING}
 	} else {
 		state = results
 	}
 
-	h.returnStateHTML(w, tipe, key, state)
+	h.returnStateHTML(w, state)
 }
 
 func (h *hmsttHandler) handleSetStateHTML(w http.ResponseWriter, r *http.Request) {
@@ -93,25 +104,21 @@ func (h *hmsttHandler) handleSetStateHTML(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var state string
-	results, err := h.service.GetState(r.Context(), tipe, key)
+	var state hmsttState
+	results, err := h.service.GetStateDetail(r.Context(), tipe, key)
 	if err != nil {
-		state = ERR_STRING
+		state = hmsttState{Value: ERR_STRING}
 	} else {
 		state = results
 	}
 
-	h.returnStateHTML(w, tipe, key, state)
+	h.returnStateHTML(w, state)
 }
 
-func (h *hmsttHandler) returnStateHTML(w http.ResponseWriter, tipe, key, state string) {
-	var templateData = map[string]string{
-		"tipe":  tipe,
-		"key":   key,
-		"state": state,
-	}
+func (h *hmsttHandler) returnStateHTML(w http.ResponseWriter, state hmsttState) {
+	var templateData = state
 
-	templateFileName, ok := TYPE_TEMPLATES[tipe]
+	templateFileName, ok := TYPE_TEMPLATES[state.Type]
 	if !ok {
 		templateFileName = HTML_TEMPLATE_NOTFOUND_TYPE
 	}

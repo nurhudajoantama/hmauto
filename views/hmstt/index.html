@@ -37,22 +37,17 @@
 
                         <!-- HTMX target: this element will be replaced with the rendered switch partial -->
                         <div class="row">
-                            <div id="hmstt_switch_server_1" class="switch-placeholder col-sm-3 mb-2"
-                                hx-get="/hmstt/statehtml/switch/server_1"
+                            <!-- Render switch placeholders from .Servers slice -->
+                            {{- range .states }}
+                            <div id="hmstt_{{.Type}}_{{.K}}" class="switch-placeholder col-sm-3 mb-2"
+                                hx-get="/hmstt/statehtml/{{.Type}}/{{.K}}"
                                 hx-trigger="load, every 5s"
                                 hx-swap="outerHTML">
                                 <div class="d-flex justify-content-center align-items-center">
                                     <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
                                 </div>
                             </div>
-                            <div id="hmstt_switch_server_2" class="switch-placeholder col-sm-3 mb-2"
-                                hx-get="/hmstt/statehtml/switch/server_2"
-                                hx-trigger="load, every 5s"
-                                hx-swap="outerHTML">
-                                <div class="d-flex justify-content-center align-items-center">
-                                    <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
-                                </div>
-                            </div>
+                            {{- end }}
                         </div>
                     </div>
                 </div>

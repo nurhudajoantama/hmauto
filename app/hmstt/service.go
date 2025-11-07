@@ -34,7 +34,30 @@ func (s *hmsttService) GetState(ctx context.Context, tipe, key string) (string, 
 		return "", errors.New("GET STATE ERROR")
 	}
 
+	return result.Value, nil
+}
+
+func (s *hmsttService) GetStateDetail(ctx context.Context, tipe, key string) (hmsttState, error) {
+	generatedKey, ok := generateKey(tipe, key)
+	if !ok {
+		return hmsttState{}, errors.New("INVALID TYPE OR KEY")
+	}
+
+	result, err := s.store.GetState(ctx, generatedKey)
+	if err != nil {
+		return hmsttState{}, errors.New("GET STATE ERROR")
+	}
+
 	return result, nil
+}
+
+func (s *hmsttService) GetAllStates(ctx context.Context) ([]hmsttState, error) {
+	results, err := s.store.GetAllStates(ctx)
+	if err != nil {
+		return nil, errors.New("GET ALL STATES ERROR")
+	}
+
+	return results, nil
 }
 
 func (s *hmsttService) SetState(ctx context.Context, tipe, key, value string) error {
@@ -45,7 +68,15 @@ func (s *hmsttService) SetState(ctx context.Context, tipe, key, value string) er
 	}
 
 	tx := s.store.Transaction()
-	err := s.store.SetStateTx(ctx, tx, generatedKey, value)
+
+	state, err := s.store.GetState(ctx, generatedKey)
+	if err != nil {
+		return errors.New("GET STATE BEFORE SET ERROR")
+	}
+
+	state.Value = value
+
+	err = s.store.SetStateTx(ctx, tx, &state)
 	if err != nil {
 		log.Error().Err(err).Msg("SetState failed")
 		s.store.Rollback(tx)
