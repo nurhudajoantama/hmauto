@@ -76,7 +76,7 @@ pipeline {
               # Extract views on remote and set executable bit for binary
               # Extract views and restart the service on the remote host. RESTART_WITH_SUDO controls whether sudo is used.
               ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} \
-                "mkdir -p ${REMOTE_PATH} && cd ${REMOTE_PATH} && tar -xzf views-hmstt.tar.gz && chmod +x ${BINARY_NAME} && systemctl restart ${SERVICE_NAME}"
+                "systemctl stop ${SERVICE_NAME} && mkdir -p ${REMOTE_PATH} && cd ${REMOTE_PATH} && tar -xzf views-hmstt.tar.gz && chmod +x ${BINARY_NAME} && systemctl start ${SERVICE_NAME}"
             '''
           }
         }

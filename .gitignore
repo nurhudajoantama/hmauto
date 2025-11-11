@@ -9,6 +9,6 @@ bin/
 conf/
 
 kv/
-
+hmstt-linux
 logs/
 *.log
