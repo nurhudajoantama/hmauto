@@ -6,6 +6,8 @@ const (
 	PREFIX_HMSTT  = "hmstt"
 	PREFIX_SWITCH = "switch"
 
+	MODEM_SWITCH_KEY = "server_1" // pindahin ke database nih biar gampang maintenance
+
 	HTML_TEMPLATE_PATTERN       = "views/hmstt/*.html"
 	HTML_TEMPLATE_SWITCH        = "switch.html"
 	HTML_TEMPLATE_NOTFOUND_TYPE = "notfoundtipe.html"
@@ -13,19 +15,15 @@ const (
 	STATE_OFF = "off"
 	STATE_ON  = "on"
 
-	STATE_SWITCH_1 = "1"
-	STATE_SWITCH_2 = "2"
-	STATE_SWITCH_3 = "3"
-	STATE_SWITCH_4 = "4"
-
 	ERR_STRING = "ERR"
 
 	KEY_DELIMITER = "."
+
+	INTERNET_CHECK_ADDRESS = "10.10.10.3" // pindah ke config atau storage nanti
+	INTERNET_MODEM_ADDRESS = "10.10.10.1" // pindah ke config atau storage nanti
 )
 
 var (
-	SWITCH_STATES = []string{STATE_SWITCH_1, STATE_SWITCH_2, STATE_SWITCH_3, STATE_SWITCH_4}
-
 	TYPE_TEMPLATES = map[string]string{
 		PREFIX_SWITCH: HTML_TEMPLATE_SWITCH,
 	}

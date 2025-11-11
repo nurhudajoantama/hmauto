@@ -3,6 +3,7 @@ package hmstt
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -92,4 +93,15 @@ func (s *hmsttService) SetState(ctx context.Context, tipe, key, value string) er
 	s.store.Commit(tx)
 
 	return nil
+}
+
+func (s *hmsttService) RestartModem(ctx context.Context) (err error) {
+	err = s.SetState(ctx, PREFIX_SWITCH, MODEM_SWITCH_KEY, STATE_OFF)
+	if err != nil {
+		return
+	}
+
+	time.Sleep(500 * time.Millisecond)
+	err = s.SetState(ctx, PREFIX_SWITCH, MODEM_SWITCH_KEY, STATE_ON)
+	return
 }
