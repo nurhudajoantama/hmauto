@@ -26,7 +26,7 @@ func RegisterWorkers(s *worker.Worker, svc *hmsttService) {
 
 func (w *hmsttWorker) internetWorker(ctx context.Context) func() error {
 	return func() error {
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(INTERVAL_NET_CHECK * time.Second)
 		defer ticker.Stop()
 
 		for {
@@ -35,8 +35,8 @@ func (w *hmsttWorker) internetWorker(ctx context.Context) func() error {
 				log.Info().Msg("hmstt internet worker stopped")
 				return nil
 			case <-ticker.C:
-				pingCheckModemOk := checkModemInternet()
-				if !pingCheckModemOk {
+				pingCheckNetOk := PingInternet(INTERNET_CHECK_ADDRESS)
+				if !pingCheckNetOk {
 					log.Print("modem connection is down, just wait")
 					err := w.internetWorkerSwitchModem(ctx)
 					if err != nil {
@@ -50,7 +50,7 @@ func (w *hmsttWorker) internetWorker(ctx context.Context) func() error {
 
 func (w *hmsttWorker) internetWorkerSwitchModem(ctx context.Context) error {
 	exp := backoff.NewExponentialBackOff()
-	exp.InitialInterval = 30 * time.Minute
+	exp.InitialInterval = 30 * time.Second
 	exp.MaxInterval = 10 * time.Minute
 	exp.MaxElapsedTime = 0
 	exp.RandomizationFactor = 0.3
@@ -60,8 +60,15 @@ func (w *hmsttWorker) internetWorkerSwitchModem(ctx context.Context) error {
 
 	return backoff.Retry(func() error {
 
-		pingCheckModemOk := checkModemInternet()
-		if pingCheckModemOk {
+		pingCheckModemOk := PingInternet(INTERNET_MODEM_ADDRESS)
+		if !pingCheckModemOk {
+			log.Print("modem connection is down")
+			return errors.New("modem connection is down, cannot restart modem (will retry)")
+		}
+
+		pingCheckNetOk := PingInternet(INTERNET_CHECK_ADDRESS)
+		if pingCheckNetOk {
+			log.Print("internet connection is down")
 			return nil
 		}
 
@@ -77,21 +84,4 @@ func (w *hmsttWorker) internetWorkerSwitchModem(ctx context.Context) error {
 		return errors.New("internet still down after modem restart (will retry)")
 	}, bo)
 
-}
-
-func checkModemInternet() bool {
-	pingCheckModemOk := PingInternet(INTERNET_MODEM_ADDRESS)
-	if !pingCheckModemOk {
-		log.Print("modem connection is down")
-		return false
-	}
-
-	pingCheckNetOk := PingInternet(INTERNET_CHECK_ADDRESS)
-	if !pingCheckNetOk {
-		log.Print("internet connection is down")
-		return false
-	}
-
-	log.Print("internet connection is healthy")
-	return true
 }
