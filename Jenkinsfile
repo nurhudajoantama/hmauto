@@ -10,7 +10,7 @@ pipeline {
     REMOTE_HOST = "${env.REMOTE_HOST ?: 'your.remote.host'}"
     REMOTE_USER = "${env.REMOTE_USER ?: 'deploy'}"
     REMOTE_PATH = "${env.REMOTE_PATH ?: '/opt/stthmauto'}"
-    SSH_CREDENTIALS_ID = "${env.SSH_CREDENTIALS_ID ?: 'deploy-ssh'}"
+    SSH_CREDENTIALS_ID = "${env.SSH_CREDENTIALS_ID ?: 'deploy-ssh1'}"
   }
 
   stages {
