@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nurhudajoantama/stthmauto/app/hmmon"
 	"github.com/nurhudajoantama/stthmauto/app/hmstt"
 	"github.com/nurhudajoantama/stthmauto/app/server"
 	"github.com/nurhudajoantama/stthmauto/app/worker"
@@ -43,7 +44,6 @@ func main() {
 
 	// initialize rabbitmq
 	rabbitMQConn := rabbitmq.NewRabbitMQConn(config.MQTT)
-	// defer rabbitMQConn.Close()
 
 	// initialize server
 	srv := server.New(config.HTTP.Addr())
@@ -53,43 +53,28 @@ func main() {
 	w := worker.New(errgrp, ctx)
 
 	// HTSTT
-	{
-		hmsttStore := hmstt.NewStore(gormPostgres)
-		hmsttEvent := hmstt.NewEvent(rabbitMQConn)
-		hmsttService := hmstt.NewService(hmsttStore, hmsttEvent)
-		hmstt.RegisterHandlers(srv, hmsttService)
+	hmsttStore := hmstt.NewStore(gormPostgres)
+	hmsttEvent := hmstt.NewEvent(rabbitMQConn)
+	hmsttService := hmstt.NewService(hmsttStore, hmsttEvent)
+	hmstt.RegisterHandlers(srv, hmsttService)
 
-		hmstt.RegisterWorkers(w, hmsttService)
-	}
+	// HMMON
+	hmmon.RegisterWorkers(w, hmsttService, config.InternetCheck)
 
-	// start server implemented graceful shutdown
-	// go func() {
-	// 	log.Info().Msgf("starting server on %s", config.HTTP.Addr())
-	// 	if err := srv.Start(); err != nil {
-	// 		log.Error().Err(err).Msg("server stopped with error")
-	// 	}
-	// }()
 	errgrp.Go(func() error {
 		srv.Start(ctx)
 		return nil
 	})
 
 	// start workers
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
-
-	<-quit
-
-	log.Info().Msg("shutting down server...")
-	{
-		gracefulPeriod := 10 * time.Second
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), gracefulPeriod)
-		defer cancel()
-
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			log.Error().Err(err).Msg("failed to gracefully shutdown server")
-		}
-		log.Info().Msg("server stopped")
+	if err := errgrp.Wait(); err != nil {
+		log.Error().Err(err).Msg("closing application due to error")
 	}
+
+	// Close Connection
+	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	rabbitmq.Close(closeCtx, rabbitMQConn)
+	postgres.Close(closeCtx, gormPostgres)
 }

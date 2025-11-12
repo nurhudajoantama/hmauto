@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"time"
 
 	log "github.com/rs/zerolog/log"
@@ -26,4 +27,26 @@ func NewGorm(c config.SQL) *gorm.DB {
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	return db
+}
+
+func Close(ctx context.Context, db *gorm.DB) {
+	c := make(chan struct{})
+	go func() {
+		sqlDB, err := db.DB()
+		if err != nil {
+			log.Error().Err(err).Msg("failed to get database instance for closing")
+			return
+		}
+		if err := sqlDB.Close(); err != nil {
+			log.Error().Err(err).Msg("failed to close database connection")
+		}
+		close(c)
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Warn().Msg("timeout while closing database connection")
+	case <-c:
+		log.Info().Msg("database connection closed")
+	}
 }

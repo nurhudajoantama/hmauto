@@ -1,6 +1,8 @@
 package rabbitmq
 
 import (
+	"context"
+
 	log "github.com/rs/zerolog/log"
 
 	"github.com/nurhudajoantama/stthmauto/internal/config"
@@ -25,4 +27,21 @@ func NewRabbitMQChannel(conn *amqp.Connection) *amqp.Channel {
 	log.Info().Msg("Opened a channel to RabbitMQ")
 
 	return ch
+}
+
+func Close(ctx context.Context, conn *amqp.Connection) {
+	c := make(chan struct{})
+	go func() {
+		if err := conn.Close(); err != nil {
+			log.Error().Err(err).Msg("failed to close RabbitMQ connection")
+		}
+		close(c)
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Warn().Msg("timeout while closing RabbitMQ connection")
+	case <-c:
+		log.Info().Msg("RabbitMQ connection closed")
+	}
 }
