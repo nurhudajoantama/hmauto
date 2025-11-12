@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 type HmsttService struct {
@@ -25,13 +25,17 @@ type GetStateResponse struct {
 }
 
 func (s *HmsttService) GetState(ctx context.Context, tipe, key string) (string, error) {
+	l := zerolog.Ctx(ctx)
+
 	generatedKey, ok := generateKey(tipe, key)
 	if !ok {
+		l.Error().Err(errors.New("INVALID TYPE OR KEY")).Msg("GetState failed")
 		return "", errors.New("INVALID TYPE OR KEY")
 	}
 
 	result, err := s.store.GetState(ctx, generatedKey)
 	if err != nil {
+		l.Error().Err(err).Msg("GetState failed")
 		return "", errors.New("GET STATE ERROR")
 	}
 
@@ -62,9 +66,15 @@ func (s *HmsttService) GetAllStates(ctx context.Context) ([]hmsttState, error) {
 }
 
 func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) error {
+	l := zerolog.Ctx(ctx)
+	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("hmstt_type", tipe).Str("hmstt_key", key).Str("hmstt_value", value)
+	})
+	l.Info().Msg("Handling SetState service")
+
 	generatedKey, ok := canTypeChangedWithKey(tipe, key, value)
 	if !ok {
-		log.Error().Err(errors.New("INVALID TYPE OR KEY")).Msg("SetState failed")
+		l.Error().Err(errors.New("INVALID TYPE OR KEY")).Msg("SetState failed")
 		return errors.New("INVALID TYPE OR KEY")
 	}
 
@@ -72,6 +82,7 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 
 	state, err := s.store.GetState(ctx, generatedKey)
 	if err != nil {
+		l.Error().Err(err).Msg("GetState before SetState failed")
 		return errors.New("GET STATE BEFORE SET ERROR")
 	}
 
@@ -79,14 +90,14 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 
 	err = s.store.SetStateTx(ctx, tx, &state)
 	if err != nil {
-		log.Error().Err(err).Msg("SetState failed")
+		l.Error().Err(err).Msg("SetState failed")
 		s.store.Rollback(tx)
 		return errors.New("SET STATE ERROR")
 	}
 
 	err = s.event.StateChange(ctx, generatedKey, value)
 	if err != nil {
-		log.Error().Err(err).Msg("StateChange failed")
+		l.Error().Err(err).Msg("StateChange failed")
 		s.store.Rollback(tx)
 		return errors.New("STATE CHANGE ERROR")
 	}
@@ -96,12 +107,23 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 }
 
 func (s *HmsttService) RestartSwitchByKey(ctx context.Context, key string) (err error) {
+	l := zerolog.Ctx(ctx)
+	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("hmstt_key", key)
+	})
+	l.Info().Msg("Handling RestartSwitchByKey service")
+
 	err = s.SetState(ctx, PREFIX_SWITCH, key, STATE_OFF)
 	if err != nil {
+		l.Error().Err(err).Msg("SetState to OFF failed in RestartSwitchByKey")
 		return
 	}
 
 	time.Sleep(500 * time.Millisecond)
 	err = s.SetState(ctx, PREFIX_SWITCH, key, STATE_ON)
+	if err != nil {
+		l.Error().Err(err).Msg("SetState to ON failed in RestartSwitchByKey")
+		return
+	}
 	return
 }

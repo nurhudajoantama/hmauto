@@ -6,7 +6,7 @@ import (
 
 	"github.com/nurhudajoantama/stthmauto/internal/rabbitmq"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 type HmsttEvent struct {
@@ -24,6 +24,8 @@ func (e *HmsttEvent) StateChange(ctx context.Context, key string, value string) 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
+	l := zerolog.Ctx(ctx)
+
 	routing := MQ_CHANNEL_HMSTT + KEY_DELIMITER + key
 
 	err := e.ch.PublishWithContext(
@@ -38,9 +40,9 @@ func (e *HmsttEvent) StateChange(ctx context.Context, key string, value string) 
 		},
 	)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to publish a message")
+		l.Error().Err(err).Msg("Failed to publish a message")
 	}
-	log.Info().Str("key", routing).Str("value", value).Msg("Published state change event")
+	l.Info().Msgf("Published state change event %s:%s", key, value)
 
 	return err
 }

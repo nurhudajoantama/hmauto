@@ -37,7 +37,12 @@ func main() {
 
 	// initialize logger
 	cleanupLog := instrumentation.InitializeLogger(config.Log)
-	defer cleanupLog()
+
+	// initialize otel
+	otelShutdown, err := instrumentation.SetupOTelSDK(ctx)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize OpenTelemetry")
+	}
 
 	// initialize bbolt
 	gormPostgres := postgres.NewGorm(config.DB)
@@ -77,4 +82,7 @@ func main() {
 	_ = srv.Shutdown(closeCtx)
 	rabbitmq.Close(closeCtx, rabbitMQConn)
 	postgres.Close(closeCtx, gormPostgres)
+
+	otelShutdown(closeCtx)
+	cleanupLog(closeCtx)
 }

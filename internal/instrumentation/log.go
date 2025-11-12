@@ -1,6 +1,7 @@
 package instrumentation
 
 import (
+	"context"
 	"io"
 	"os"
 	"time"
@@ -10,7 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func InitializeLogger(conf config.Logging) func() {
+func InitializeLogger(conf config.Logging) func(cxt context.Context) {
 	level, err := zerolog.ParseLevel(conf.Level)
 	if err != nil {
 		log.Fatal().Err(err).Msg("unable to parse log level")
@@ -41,9 +42,21 @@ func InitializeLogger(conf config.Logging) func() {
 	multi := zerolog.MultiLevelWriter(writers...)
 	log.Logger = zerolog.New(multi).With().Timestamp().Logger()
 
-	return func() {
+	cleanupFunc := func(ctx context.Context) {
 		if runLogFile != nil {
-			runLogFile.Close()
+			cErr := make(chan error)
+			go func() {
+				cErr <- runLogFile.Close()
+			}()
+			select {
+			case err := <-cErr:
+				if err != nil {
+					log.Error().Err(err).Msg("failed to close log file")
+				}
+			case <-ctx.Done():
+			}
 		}
 	}
+
+	return cleanupFunc
 }
