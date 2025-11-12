@@ -55,7 +55,7 @@ func (s *Server) GetRouter() *mux.Router {
 }
 
 // Start runs the HTTP server. It returns when the server stops.
-func (s *Server) Start(ctx context.Context) {
+func (s *Server) Start(ctx context.Context) error {
 	handler := otelhttp.NewHandler(s.router, "stthmauto-server")
 
 	s.httpServer = &http.Server{
@@ -66,23 +66,23 @@ func (s *Server) Start(ctx context.Context) {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	srvErr := make(chan error, 1)
 	go func() {
-		if err := s.httpServer.ListenAndServe(); err != nil {
-			log.Error().Err(err).Msg("HTTP server error")
-		}
+		srvErr <- s.httpServer.ListenAndServe()
 	}()
 	log.Info().Msgf("HTTP server started on %s", s.addr)
 
-	<-ctx.Done()
-
-	log.Info().Msg("shutting down HTTP server...")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := s.Shutdown(shutdownCtx); err != nil {
-		log.Error().Err(err).Msg("failed to gracefully shutdown HTTP server")
-	} else {
-		log.Info().Msg("HTTP server stopped")
+	select {
+	case <-ctx.Done():
+		// Shutdown server
+	case err := <-srvErr:
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatal().Err(err).Msg("HTTP server error")
+		}
+		return err
 	}
+
+	return nil
 }
 
 // Shutdown gracefully shuts the server down within the provided context.

@@ -62,8 +62,7 @@ func main() {
 	hmmon.RegisterWorkers(w, hmsttService, config.InternetCheck)
 
 	errgrp.Go(func() error {
-		srv.Start(ctx)
-		return nil
+		return srv.Start(ctx)
 	})
 
 	// start workers
@@ -75,6 +74,7 @@ func main() {
 	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	_ = srv.Shutdown(closeCtx)
 	rabbitmq.Close(closeCtx, rabbitMQConn)
 	postgres.Close(closeCtx, gormPostgres)
 }
