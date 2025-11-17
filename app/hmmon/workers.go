@@ -6,21 +6,28 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/nurhudajoantama/hmauto/app/hmalert"
 	"github.com/nurhudajoantama/hmauto/app/hmstt"
 	"github.com/nurhudajoantama/hmauto/app/worker"
 	"github.com/nurhudajoantama/hmauto/internal/config"
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	DISCORD_TIPE = "Cek Internet"
+)
+
 type HmmonWorker struct {
-	service       *hmstt.HmsttService
-	intercheckCfg config.InternetCheck
+	hmsttService   *hmstt.HmsttService
+	hmalertService *hmalert.HmalerService
+	intercheckCfg  config.InternetCheck
 }
 
-func RegisterWorkers(s *worker.Worker, svc *hmstt.HmsttService, intercheckCfg config.InternetCheck) {
+func RegisterWorkers(s *worker.Worker, hmsttService *hmstt.HmsttService, hmalertService *hmalert.HmalerService, intercheckCfg config.InternetCheck) {
 	hw := &HmmonWorker{
-		service:       svc,
-		intercheckCfg: intercheckCfg,
+		hmsttService:   hmsttService,
+		hmalertService: hmalertService,
+		intercheckCfg:  intercheckCfg,
 	}
 
 	s.Go(hw.internetWorker)
@@ -69,18 +76,21 @@ func (w *HmmonWorker) internetWorkerSwitchModem(ctx context.Context) error {
 		pingCheckModemOk := pingInternet(w.intercheckCfg.ModemAddress)
 		if !pingCheckModemOk {
 			log.Print("modem connection is down")
+			w.hmalertService.PublishAlert(context.Background(), DISCORD_TIPE, hmalert.LEVEL_WARNING, "Modem connection is down, cannot restart modem ⚠️")
 			return errors.New("modem connection is down, cannot restart modem (will retry)")
 		}
 
 		pingCheckNetOk := pingInternet(w.intercheckCfg.CheckAddress)
 		if pingCheckNetOk {
-			log.Print("internet connection is down")
+			w.hmalertService.PublishAlert(context.Background(), DISCORD_TIPE, hmalert.LEVEL_INFO, "Internet connection is up ✅")
+			log.Print("internet connection is up")
 			return nil
 		}
+		w.hmalertService.PublishAlert(context.Background(), DISCORD_TIPE, hmalert.LEVEL_INFO, "Internet connection is down ❌, restarting modem 🔄")
 
 		log.Print("internet connection is down, restarting modem")
 
-		err := w.service.RestartSwitchByKey(ctx, w.intercheckCfg.SwitchKey)
+		err := w.hmsttService.RestartSwitchByKey(ctx, w.intercheckCfg.SwitchKey)
 		if err != nil {
 			log.Printf("restart modem failed: %v (will retry)", err)
 			return err

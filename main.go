@@ -73,14 +73,14 @@ func main() {
 	hmsttService := hmstt.NewService(hmsttStore, hmsttEvent)
 	hmstt.RegisterHandlers(srv, hmsttService)
 
-	// HMMON
-	hmmon.RegisterWorkers(w, hmsttService, config.InternetCheck)
-
 	// MLALERT
 	hmalertEvent := hmalert.NewEvent(rabbitMQConn)
 	hmalertService := hmalert.NewService(discordWebhookInfo, discordWebhookWarning, discordWebhookError, hmalertEvent)
 	hmalert.RegisterHandler(srv, hmalertService)
 	hmalert.RegisterWorkers(w, hmalertEvent, hmalertService)
+
+	// HMMON
+	hmmon.RegisterWorkers(w, hmsttService, hmalertService, config.InternetCheck)
 
 	errgrp.Go(func() error {
 		return srv.Start(ctx)
