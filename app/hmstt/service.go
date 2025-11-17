@@ -3,20 +3,25 @@ package hmstt
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/nurhudajoantama/hmauto/app/hmalert"
 	"github.com/rs/zerolog"
 )
 
 type HmsttService struct {
 	store *HmsttStore
 	event *HmsttEvent
+
+	hmalertService *hmalert.HmalerService
 }
 
-func NewService(hmsttStore *HmsttStore, hmsttEvent *HmsttEvent) *HmsttService {
+func NewService(hmsttStore *HmsttStore, hmsttEvent *HmsttEvent, hmalertService *hmalert.HmalerService) *HmsttService {
 	return &HmsttService{
-		store: hmsttStore,
-		event: hmsttEvent,
+		store:          hmsttStore,
+		event:          hmsttEvent,
+		hmalertService: hmalertService,
 	}
 }
 
@@ -102,6 +107,8 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 		return errors.New("STATE CHANGE ERROR")
 	}
 	s.store.Commit(tx)
+
+	go s.hmalertService.PublishAlert(ctx, "Hmstate Change", hmalert.LEVEL_INFO, fmt.Sprintf("State %s changed to %s", generatedKey, value))
 
 	return nil
 }

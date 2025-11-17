@@ -2,6 +2,7 @@ package hmalert
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/nurhudajoantama/hmauto/internal/discord"
@@ -30,7 +31,8 @@ func (s *HmalerService) SendDiscordNotification(ctx context.Context, body alertE
 	l.Info().Msgf("Sending Discord notification - Level: %s, Message: %s", body.Level, body.Message)
 
 	var payload discord.DiscordWebhookPayload
-	payload.Content = "UIIAIUIIIAI"
+
+	timestamp := time.Unix(body.Timestamp, 0)
 
 	embed1 := discord.DiscordEmbed{
 		Title:       "Hmalert Notification",
@@ -48,8 +50,8 @@ func (s *HmalerService) SendDiscordNotification(ctx context.Context, body alertE
 				Inline: true,
 			},
 			{
-				Name:   "Timestamp",
-				Value:  time.Unix(body.Timestamp, 0).Format(time.RFC3339),
+				Name:   "Time",
+				Value:  fmt.Sprintf("%s %s", timestamp.Format("2006-01-02"), timestamp.Format("15:04:05")),
 				Inline: false,
 			},
 			{

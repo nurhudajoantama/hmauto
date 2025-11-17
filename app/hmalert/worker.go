@@ -47,8 +47,8 @@ func (w *HmalertWorker) alertConsumer(ctx context.Context) error {
 			d.Ack(false)
 		}
 	}()
-
 	<-ctx.Done()
+
 	l.Info().Msg("Hmalert alert consumer stopped")
 	return nil
 }

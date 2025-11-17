@@ -78,7 +78,7 @@ func (e *HmalertEvent) ConsumeAlerts(ctx context.Context) (<-chan amqp.Delivery,
 	msgs, err := e.ch.Consume(
 		e.q.Name, // queue
 		"",       // consumer
-		true,     // auto-ack
+		false,    // auto-ack
 		false,    // exclusive
 		false,    // no-local
 		false,    // no-wait

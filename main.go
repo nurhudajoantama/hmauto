@@ -67,17 +67,19 @@ func main() {
 	errgrp, ctx := errgroup.WithContext(ctx)
 	w := worker.New(errgrp, ctx)
 
+	// HMLALERT
+	hmalertProducerEvent := hmalert.NewEvent(rabbitMQConn)
+	hmalertService := hmalert.NewService(discordWebhookInfo, discordWebhookWarning, discordWebhookError, hmalertProducerEvent)
+	hmalert.RegisterHandler(srv, hmalertService)
+
+	hmalertConsumerEvent := hmalert.NewEvent(rabbitMQConn)
+	hmalert.RegisterWorkers(w, hmalertConsumerEvent, hmalertService)
+
 	// HTSTT
 	hmsttStore := hmstt.NewStore(gormPostgres)
 	hmsttEvent := hmstt.NewEvent(rabbitMQConn)
-	hmsttService := hmstt.NewService(hmsttStore, hmsttEvent)
+	hmsttService := hmstt.NewService(hmsttStore, hmsttEvent, hmalertService)
 	hmstt.RegisterHandlers(srv, hmsttService)
-
-	// MLALERT
-	hmalertEvent := hmalert.NewEvent(rabbitMQConn)
-	hmalertService := hmalert.NewService(discordWebhookInfo, discordWebhookWarning, discordWebhookError, hmalertEvent)
-	hmalert.RegisterHandler(srv, hmalertService)
-	hmalert.RegisterWorkers(w, hmalertEvent, hmalertService)
 
 	// HMMON
 	hmmon.RegisterWorkers(w, hmsttService, hmalertService, config.InternetCheck)
