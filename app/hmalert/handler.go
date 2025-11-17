@@ -23,53 +23,81 @@ func RegisterHandler(s *server.Server, svc *HmalerService) {
 
 }
 
-type publishAlertRequest struct {
-	Level   string `json:"level"`
-	Message string `json:"message"`
-	Tipe    string `json:"tipe"`
-}
-
 func (h *HmalertHandler) PublishAlert(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
 	l.Info().Msg("Handling PublishAlert request")
 
-	var level, message, tipe string
+	var publishReq PublishAlertBody
 
 	switch r.Method {
 	case http.MethodGet:
 		q := r.URL.Query()
-		level = q.Get("level")
-		message = q.Get("message")
-		tipe = q.Get("tipe")
+		publishReq.Level = q.Get("level")
+		publishReq.Message = q.Get("message")
+		publishReq.Tipe = q.Get("tipe")
 	case http.MethodPost:
 		// parse from json
 		body := r.Body
 		defer body.Close()
 		decoder := json.NewDecoder(body)
-		var publishReq publishAlertRequest
 		err := decoder.Decode(&publishReq)
 		if err != nil {
 			l.Error().Err(err).Msg("Failed to parse request body")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		level = publishReq.Level
-		message = publishReq.Message
-		tipe = publishReq.Tipe
 	default:
 		l.Error().Msg("Unsupported HTTP method")
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	l.Debug().Str("level", level).Str("message", message).Str("type", tipe).Msg("Parsed PublishAlert request")
+	l.Debug().Str("level", publishReq.Level).Str("message", publishReq.Message).Str("type", publishReq.Tipe).Msg("Parsed PublishAlert request")
 
-	err := h.Service.PublishAlert(ctx, tipe, level, message)
+	err := h.Service.PublishAlert(ctx, publishReq)
 	if err != nil {
 		l.Error().Err(err).Msg("Failed to publish alert")
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("Failed to publish alert"))
 		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Alert published successfully"))
+
+	l.Trace().Msgf("PublishAlert request handled successfully")
+}
+
+func (h *HmalertHandler) PublishAlertBatch(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := zerolog.Ctx(ctx)
+	l.Info().Msg("Handling PublishAlert request")
+
+	var publishReqs []PublishAlertBody
+
+	// parse from json
+	body := r.Body
+	defer body.Close()
+	decoder := json.NewDecoder(body)
+	err := decoder.Decode(&publishReqs)
+	if err != nil {
+		l.Error().Err(err).Msg("Failed to parse request body")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// TROBOS MANG
+	for _, publishReq := range publishReqs {
+		go func(publishReq PublishAlertBody) {
+			l.Debug().Str("level", publishReq.Level).Str("message", publishReq.Message).Str("type", publishReq.Tipe).Msg("Parsed PublishAlert request")
+			err := h.Service.PublishAlert(ctx, publishReq)
+			if err != nil {
+				l.Error().Err(err).Msg("Failed to publish alert")
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Failed to publish alert"))
+				return
+			}
+		}(publishReq)
 	}
 
 	w.WriteHeader(http.StatusOK)

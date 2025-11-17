@@ -108,7 +108,11 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 	}
 	s.store.Commit(tx)
 
-	go s.hmalertService.PublishAlert(ctx, "Hmstate Change", hmalert.LEVEL_INFO, fmt.Sprintf("State %s changed to %s", generatedKey, value))
+	go s.hmalertService.PublishAlert(ctx, hmalert.PublishAlertBody{
+		Tipe:    "Hmstate Change",
+		Level:   hmalert.LEVEL_INFO,
+		Message: fmt.Sprintf("State %s changed to %s", generatedKey, value),
+	})
 
 	return nil
 }

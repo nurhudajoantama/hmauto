@@ -80,14 +80,14 @@ func (s *HmalerService) SendDiscordNotification(ctx context.Context, body alertE
 	return err
 }
 
-func (s *HmalerService) PublishAlert(ctx context.Context, tipe, level, message string) error {
+func (s *HmalerService) PublishAlert(ctx context.Context, b PublishAlertBody) error {
 	l := zerolog.Ctx(ctx)
-	l.Info().Msgf("Publishing alert - Level: %s, Message: %s", level, message)
+	l.Info().Msgf("Publishing alert - Level: %s, Message: %s", b.Level, b.Message)
 
 	body := alertEvent{
-		Type:      tipe,
-		Level:     level,
-		Message:   message,
+		Type:      b.Tipe,
+		Level:     b.Level,
+		Message:   b.Message,
 		Timestamp: time.Now().Unix(),
 	}
 

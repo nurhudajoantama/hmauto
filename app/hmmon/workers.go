@@ -77,17 +77,29 @@ func (w *HmmonWorker) internetWorkerSwitchModem(ctx context.Context) error {
 		pingCheckModemOk := pingInternet(w.intercheckCfg.ModemAddress)
 		if !pingCheckModemOk {
 			log.Print("modem connection is down")
-			w.hmalertService.PublishAlert(context.Background(), DISCORD_TIPE, hmalert.LEVEL_WARNING, fmt.Sprintf("Fail Ping %s, Modem connection is down ❌, cannot restart modem 🔄", w.intercheckCfg.ModemAddress))
+			w.hmalertService.PublishAlert(context.Background(), hmalert.PublishAlertBody{
+				Tipe:    DISCORD_TIPE,
+				Level:   hmalert.LEVEL_WARNING,
+				Message: fmt.Sprintf("Fail Ping %s, Modem connection is down ❌, cannot restart modem 🔄", w.intercheckCfg.ModemAddress),
+			})
 			return errors.New("modem connection is down, cannot restart modem (will retry)")
 		}
 
 		pingCheckNetOk := pingInternet(w.intercheckCfg.CheckAddress)
 		if pingCheckNetOk {
-			w.hmalertService.PublishAlert(context.Background(), DISCORD_TIPE, hmalert.LEVEL_INFO, fmt.Sprintf("Ping %s success, Internet connection is up ✅", w.intercheckCfg.CheckAddress))
+			w.hmalertService.PublishAlert(context.Background(), hmalert.PublishAlertBody{
+				Tipe:    DISCORD_TIPE,
+				Level:   hmalert.LEVEL_INFO,
+				Message: fmt.Sprintf("Ping %s success, Internet connection is up ✅", w.intercheckCfg.CheckAddress),
+			})
 			log.Print("internet connection is up")
 			return nil
 		}
-		w.hmalertService.PublishAlert(context.Background(), DISCORD_TIPE, hmalert.LEVEL_INFO, fmt.Sprintf("Ping %s failed, Internet connection is down ❌, restarting modem 🔄", w.intercheckCfg.CheckAddress))
+		w.hmalertService.PublishAlert(context.Background(), hmalert.PublishAlertBody{
+			Tipe:    DISCORD_TIPE,
+			Level:   hmalert.LEVEL_INFO,
+			Message: fmt.Sprintf("Ping %s failed, Internet connection is down ❌, restarting modem 🔄", w.intercheckCfg.CheckAddress),
+		})
 
 		log.Print("internet connection is down, restarting modem")
 
