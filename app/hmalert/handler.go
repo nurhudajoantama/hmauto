@@ -47,16 +47,16 @@ func (h *HmalertHandler) PublishAlert(w http.ResponseWriter, r *http.Request) {
 		body := r.Body
 		defer body.Close()
 		decoder := json.NewDecoder(body)
-		err := decoder.Decode(&publishAlertRequest{
-			Level:   level,
-			Message: message,
-			Tipe:    tipe,
-		})
+		var publishReq publishAlertRequest
+		err := decoder.Decode(&publishReq)
 		if err != nil {
 			l.Error().Err(err).Msg("Failed to parse request body")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		level = publishReq.Level
+		message = publishReq.Message
+		tipe = publishReq.Tipe
 	default:
 		l.Error().Msg("Unsupported HTTP method")
 		w.WriteHeader(http.StatusMethodNotAllowed)

@@ -36,7 +36,7 @@ func (s *HmalerService) SendDiscordNotification(ctx context.Context, body alertE
 
 	embed1 := discord.DiscordEmbed{
 		Title:       "Hmalert Notification",
-		Description: "Alert " + body.Message,
+		Description: "",
 		Color:       getDiscordColor(body.Level),
 		Fields: []discord.DiscordEmbedField{
 			{
