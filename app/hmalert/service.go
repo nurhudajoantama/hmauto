@@ -4,18 +4,24 @@ import (
 	"context"
 	"time"
 
+	"github.com/nurhudajoantama/hmauto/internal/discord"
 	"github.com/rs/zerolog"
 )
 
 type HmalerService struct {
-	Discord *HmalertDiscord
-	Event   *HmalertEvent
+	DiscordInfo    *discord.DiscordWebhook
+	DiscordWarning *discord.DiscordWebhook
+	DiscordError   *discord.DiscordWebhook
+
+	Event *HmalertEvent
 }
 
-func NewService(discord *HmalertDiscord, event *HmalertEvent) *HmalerService {
+func NewService(discordInfo *discord.DiscordWebhook, discordWarning *discord.DiscordWebhook, discordError *discord.DiscordWebhook, event *HmalertEvent) *HmalerService {
 	return &HmalerService{
-		Discord: discord,
-		Event:   event,
+		DiscordInfo:    discordInfo,
+		DiscordWarning: discordWarning,
+		DiscordError:   discordError,
+		Event:          event,
 	}
 }
 
@@ -23,14 +29,14 @@ func (s *HmalerService) SendDiscordNotification(ctx context.Context, body alertE
 	l := zerolog.Ctx(ctx)
 	l.Info().Msgf("Sending Discord notification - Level: %s, Message: %s", body.Level, body.Message)
 
-	var payload DiscordWebhookPayload
+	var payload discord.DiscordWebhookPayload
 	payload.Content = "UIIAIUIIIAI"
 
-	embed1 := DiscordEmbed{
+	embed1 := discord.DiscordEmbed{
 		Title:       "Hmalert Notification",
 		Description: "Alert " + body.Message,
 		Color:       getDiscordColor(body.Level),
-		Fields: []DiscordEmbedField{
+		Fields: []discord.DiscordEmbedField{
 			{
 				Name:   "Type",
 				Value:  body.Type,
@@ -54,9 +60,22 @@ func (s *HmalerService) SendDiscordNotification(ctx context.Context, body alertE
 		},
 	}
 
-	payload.Embeds = []DiscordEmbed{embed1}
+	payload.Embeds = []discord.DiscordEmbed{embed1}
 
-	return s.Discord.SendMessage(ctx, body.Level, payload)
+	var err error
+
+	switch body.Level {
+	case LEVEL_INFO:
+		err = s.DiscordInfo.SendMessage(ctx, payload)
+	case LEVEL_WARNING:
+		err = s.DiscordWarning.SendMessage(ctx, payload)
+	case LEVEL_ERROR:
+		err = s.DiscordError.SendMessage(ctx, payload)
+	default:
+		l.Warn().Msgf("Unknown Discord message level: %s", body.Level)
+	}
+
+	return err
 }
 
 func (s *HmalerService) PublishAlert(ctx context.Context, tipe, level, message string) error {
@@ -75,4 +94,17 @@ func (s *HmalerService) PublishAlert(ctx context.Context, tipe, level, message s
 		return err
 	}
 	return nil
+}
+
+func getDiscordColor(level string) int {
+	switch level {
+	case LEVEL_INFO:
+		return 0x00FF00 // Green
+	case LEVEL_WARNING:
+		return 0xFFFF00 // Yellow
+	case LEVEL_ERROR:
+		return 0xFF0000 // Red
+	default:
+		return 0x808080 // Grey
+	}
 }

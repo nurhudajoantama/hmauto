@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,6 +14,7 @@ import (
 	"github.com/nurhudajoantama/hmauto/app/server"
 	"github.com/nurhudajoantama/hmauto/app/worker"
 	"github.com/nurhudajoantama/hmauto/internal/config"
+	"github.com/nurhudajoantama/hmauto/internal/discord"
 	"github.com/nurhudajoantama/hmauto/internal/instrumentation"
 	"github.com/nurhudajoantama/hmauto/internal/postgres"
 	"github.com/nurhudajoantama/hmauto/internal/rabbitmq"
@@ -51,6 +53,13 @@ func main() {
 	// initialize rabbitmq
 	rabbitMQConn := rabbitmq.NewRabbitMQConn(config.MQTT)
 
+	httpClient := http.DefaultClient
+
+	// init discord
+	discordWebhookInfo := discord.NewDiscordWebhook(httpClient, config.DiscordWebhookInfo)
+	discordWebhookWarning := discord.NewDiscordWebhook(httpClient, config.DiscordWebhookWarning)
+	discordWebhookError := discord.NewDiscordWebhook(httpClient, config.DiscordWebhookError)
+
 	// initialize server
 	srv := server.New(config.HTTP.Addr())
 
@@ -69,8 +78,7 @@ func main() {
 
 	// MLALERT
 	hmalertEvent := hmalert.NewEvent(rabbitMQConn)
-	hmalertDiscord := hmalert.NewDiscord(config.DiscordWebhookInfo, config.DiscordWebhookWarning, config.DiscordWebhookError)
-	hmalertService := hmalert.NewService(hmalertDiscord, hmalertEvent)
+	hmalertService := hmalert.NewService(discordWebhookInfo, discordWebhookWarning, discordWebhookError, hmalertEvent)
 	hmalert.RegisterHandler(srv, hmalertService)
 	hmalert.RegisterWorkers(w, hmalertEvent, hmalertService)
 

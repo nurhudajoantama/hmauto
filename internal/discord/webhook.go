@@ -1,4 +1,4 @@
-package hmalert
+package discord
 
 import (
 	"bytes"
@@ -10,45 +10,30 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type HmalertDiscord struct {
-	WebhookUrlInfo    string
-	WebhookUrlWarning string
-	WebhookUrlError   string
-
-	client *http.Client
+type DiscordWebhook struct {
+	webhookUrl string
+	client     *http.Client
 }
 
-func NewDiscord(
-	webhookUrlInfo config.DiscordWebhook,
-	webhookUrlWarning config.DiscordWebhook,
-	webhookUrlError config.DiscordWebhook,
-) *HmalertDiscord {
-	return &HmalertDiscord{
-		WebhookUrlInfo:    webhookUrlError.WebhookUrl(),
-		WebhookUrlWarning: webhookUrlWarning.WebhookUrl(),
-		WebhookUrlError:   webhookUrlError.WebhookUrl(),
-
-		client: &http.Client{},
+func NewDiscordWebhook(client *http.Client, discordWebhookConfig config.DiscordWebhook) *DiscordWebhook {
+	return &DiscordWebhook{
+		webhookUrl: discordWebhookConfig.WebhookUrl(),
+		client:     client,
 	}
 }
 
-func (d *HmalertDiscord) SendMessage(ctx context.Context, level string, payload DiscordWebhookPayload) error {
+func (d *DiscordWebhook) SendMessage(ctx context.Context, payload DiscordWebhookPayload) error {
 	l := zerolog.Ctx(ctx)
-
-	url := d.getUrlByLevel(level)
-	if url == "" {
-		return nil
-	}
 
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
-		l.Error().Err(err).Msg("Failed to marshal Discord payload")
+		l.Error().Err(err).Msg("Failed to marshal DiscordWebhook payload")
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonPayload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.webhookUrl, bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		l.Error().Err(err).Msg("Failed to create Discord request")
+		l.Error().Err(err).Msg("Failed to create DiscordWebhook request")
 		return err
 	}
 
@@ -56,40 +41,13 @@ func (d *HmalertDiscord) SendMessage(ctx context.Context, level string, payload 
 
 	_, err = d.client.Do(req)
 	if err != nil {
-		l.Error().Err(err).Msg("Failed to send Discord webhook")
+		l.Error().Err(err).Msg("Failed to send DiscordWebhook webhook")
 		return err
 	}
-
 	return nil
 }
 
-func (d *HmalertDiscord) getUrlByLevel(level string) string {
-	switch level {
-	case LEVEL_INFO:
-		return d.WebhookUrlInfo
-	case LEVEL_WARNING:
-		return d.WebhookUrlWarning
-	case LEVEL_ERROR:
-		return d.WebhookUrlError
-	default:
-		return ""
-	}
-}
-
-func getDiscordColor(level string) int {
-	switch level {
-	case LEVEL_INFO:
-		return 0x00FF00 // Green
-	case LEVEL_WARNING:
-		return 0xFFFF00 // Yellow
-	case LEVEL_ERROR:
-		return 0xFF0000 // Red
-	default:
-		return 0x808080 // Grey
-	}
-}
-
-// DiscordWebhookPayload adalah struct utama untuk payload webhook Discord.
+// DiscordWebhookPayload adalah struct utama untuk payload webhook DiscordWebhook.
 type DiscordWebhookPayload struct {
 	Username    string              `json:"username,omitempty"`
 	AvatarURL   string              `json:"avatar_url,omitempty"`
