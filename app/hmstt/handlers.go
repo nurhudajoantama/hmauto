@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/nurhudajoantama/stthmauto/app/server"
+	"github.com/nurhudajoantama/hmauto/app/server"
 	"github.com/rs/zerolog"
 )
 

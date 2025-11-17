@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/nurhudajoantama/stthmauto/internal/rabbitmq"
+	"github.com/nurhudajoantama/hmauto/internal/rabbitmq"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/rs/zerolog"
 )

@@ -6,7 +6,7 @@ import (
 
 	log "github.com/rs/zerolog/log"
 
-	"github.com/nurhudajoantama/stthmauto/internal/config"
+	"github.com/nurhudajoantama/hmauto/internal/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )

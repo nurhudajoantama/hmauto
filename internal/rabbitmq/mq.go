@@ -5,7 +5,7 @@ import (
 
 	log "github.com/rs/zerolog/log"
 
-	"github.com/nurhudajoantama/stthmauto/internal/config"
+	"github.com/nurhudajoantama/hmauto/internal/config"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 

@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/nurhudajoantama/stthmauto/internal/config"
+	"github.com/nurhudajoantama/hmauto/internal/config"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )

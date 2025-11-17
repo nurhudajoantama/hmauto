@@ -18,6 +18,8 @@ func New(group *errgroup.Group, ctx context.Context) *Worker {
 	}
 }
 
-func (w *Worker) Go(fn func(context.Context) func() error) {
-	w.Group.Go(fn(w.Ctx))
+func (w *Worker) Go(fn func(context.Context) error) {
+	w.Group.Go(func() error {
+		return fn(w.Ctx)
+	})
 }

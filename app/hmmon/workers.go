@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/nurhudajoantama/stthmauto/app/hmstt"
-	"github.com/nurhudajoantama/stthmauto/app/worker"
-	"github.com/nurhudajoantama/stthmauto/internal/config"
+	"github.com/nurhudajoantama/hmauto/app/hmstt"
+	"github.com/nurhudajoantama/hmauto/app/worker"
+	"github.com/nurhudajoantama/hmauto/internal/config"
 	"github.com/rs/zerolog/log"
 )
 
@@ -23,39 +23,36 @@ func RegisterWorkers(s *worker.Worker, svc *hmstt.HmsttService, intercheckCfg co
 		intercheckCfg: intercheckCfg,
 	}
 
-	s.Go(func(ctx context.Context) func() error {
-		return hw.internetWorker(ctx)
-	})
+	s.Go(hw.internetWorker)
 }
 
-func (w *HmmonWorker) internetWorker(ctx context.Context) func() error {
-	return func() error {
-		interval, err := time.ParseDuration(w.intercheckCfg.Interval)
-		if err != nil {
-			log.Error().Err(err).Msg("invalid internet check interval duration, using default 1 minute")
-			interval = 2 * time.Minute
-		}
+func (w *HmmonWorker) internetWorker(ctx context.Context) error {
+	interval, err := time.ParseDuration(w.intercheckCfg.Interval)
+	if err != nil {
+		log.Error().Err(err).Msg("invalid internet check interval duration, using default 1 minute")
+		interval = 2 * time.Minute
+	}
 
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 
-		for {
-			select {
-			case <-ctx.Done():
-				log.Info().Msg("hmstt internet worker stopped")
-				return nil
-			case <-ticker.C:
-				pingCheckNetOk := pingInternet(w.intercheckCfg.CheckAddress)
-				if !pingCheckNetOk {
-					log.Print("modem connection is down, just wait")
-					err := w.internetWorkerSwitchModem(ctx)
-					if err != nil {
-						log.Error().Err(err).Msg("hmstt internet worker switch error")
-					}
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Msg("hmstt internet worker stopped")
+			return nil
+		case <-ticker.C:
+			pingCheckNetOk := pingInternet(w.intercheckCfg.CheckAddress)
+			if !pingCheckNetOk {
+				log.Print("modem connection is down, just wait")
+				err := w.internetWorkerSwitchModem(ctx)
+				if err != nil {
+					log.Error().Err(err).Msg("hmstt internet worker switch error")
 				}
 			}
 		}
 	}
+
 }
 
 func (w *HmmonWorker) internetWorkerSwitchModem(ctx context.Context) error {
