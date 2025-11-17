@@ -20,7 +20,7 @@ func RegisterHandler(s *server.Server, svc *HmalerService) {
 	r := s.GetRouter()
 	hmalertGroup := r.PathPrefix("/hmalert").Subrouter()
 	hmalertGroup.HandleFunc("/publish", h.PublishAlert).Methods("GET", "POST")
-
+	hmalertGroup.HandleFunc("/publishbatch", h.PublishAlertBatch).Methods("POST")
 }
 
 func (h *HmalertHandler) PublishAlert(w http.ResponseWriter, r *http.Request) {
