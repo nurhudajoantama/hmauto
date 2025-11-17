@@ -12,7 +12,7 @@ type HmalerService struct {
 	Event   *HmalertEvent
 }
 
-func NewHmalertService(discord *HmalertDiscord, event *HmalertEvent) *HmalerService {
+func NewService(discord *HmalertDiscord, event *HmalertEvent) *HmalerService {
 	return &HmalerService{
 		Discord: discord,
 		Event:   event,

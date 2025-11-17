@@ -18,7 +18,7 @@ type HmalertDiscord struct {
 	client *http.Client
 }
 
-func NewHmalertDiscord(
+func NewDiscord(
 	webhookUrlInfo config.DiscordWebhook,
 	webhookUrlWarning config.DiscordWebhook,
 	webhookUrlError config.DiscordWebhook,

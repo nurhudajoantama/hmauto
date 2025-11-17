@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nurhudajoantama/hmauto/app/hmalert"
 	"github.com/nurhudajoantama/hmauto/app/hmmon"
 	"github.com/nurhudajoantama/hmauto/app/hmstt"
 	"github.com/nurhudajoantama/hmauto/app/server"
@@ -65,6 +66,13 @@ func main() {
 
 	// HMMON
 	hmmon.RegisterWorkers(w, hmsttService, config.InternetCheck)
+
+	// MLALERT
+	hmalertEvent := hmalert.NewEvent(rabbitMQConn)
+	hmalertDiscord := hmalert.NewDiscord(config.DiscordWebhookInfo, config.DiscordWebhookWarning, config.DiscordWebhookError)
+	hmalertService := hmalert.NewService(hmalertDiscord, hmalertEvent)
+	hmalert.RegisterHandler(srv, hmalertService)
+	hmalert.RegisterWorkers(w, hmalertEvent, hmalertService)
 
 	errgrp.Go(func() error {
 		return srv.Start(ctx)

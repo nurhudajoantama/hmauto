@@ -11,7 +11,7 @@ type HmalertHandler struct {
 	Service *HmalerService
 }
 
-func RegisterHmalertHandler(s *server.Server, svc *HmalerService) {
+func RegisterHandler(s *server.Server, svc *HmalerService) {
 	h := &HmalertHandler{
 		Service: svc,
 	}
