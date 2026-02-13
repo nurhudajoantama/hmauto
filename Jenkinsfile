@@ -70,15 +70,15 @@ pipeline {
             sh '''
               set -e
               echo "Stopping ${SERVICE_NAME} service on remote host"
-              ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} \
+              ssh ${REMOTE_USER}@${REMOTE_HOST} \
                 "systemctl stop ${SERVICE_NAME}"
               echo "Copying ${BINARY_NAME} and views to ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}"
               # Create remote path if missing and copy files
-              scp -o StrictHostKeyChecking=no ${BINARY_NAME} ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/
-              scp -o StrictHostKeyChecking=no views-hmstt.tar.gz ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/
+              scp ${BINARY_NAME} ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/
+              scp views-hmstt.tar.gz ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/
               # Extract views on remote and set executable bit for binary
-              # Extract views and restart the service on the remote host. RESTART_WITH_SUDO controls whether sudo is used.
-              ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} \
+              # Extract views and restart the service on the remote host.
+              ssh ${REMOTE_USER}@${REMOTE_HOST} \
                 "mkdir -p ${REMOTE_PATH} && cd ${REMOTE_PATH} && tar -xzf views-hmstt.tar.gz && chmod +x ${BINARY_NAME} && systemctl start ${SERVICE_NAME}"
             '''
           }
