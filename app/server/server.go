@@ -6,22 +6,51 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/nurhudajoantama/hmauto/internal/middleware"
 	"github.com/rs/zerolog/hlog"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
+
+// ServerConfig holds configuration for the server
+type ServerConfig struct {
+	APIKeys        map[string]bool
+	EnableAuth     bool
+	MaxRequestSize int64
+	RateLimiter    *middleware.RateLimiter
+}
 
 // Server wraps an http.Server and a logger.
 type Server struct {
 	httpServer *http.Server
 	router     *mux.Router
 	addr       string
+	config     *ServerConfig
 }
 
 // New creates a configured server listening on the provided address.
 func New(addr string) *Server {
+	return NewWithConfig(addr, nil)
+}
+
+// NewWithConfig creates a configured server with custom config.
+func NewWithConfig(addr string, config *ServerConfig) *Server {
+	if config == nil {
+		config = &ServerConfig{
+			EnableAuth:     false,
+			MaxRequestSize: 1024 * 1024, // 1MB default
+		}
+	}
+
 	r := mux.NewRouter()
 
+	// Security headers middleware (always enabled)
+	r.Use(middleware.SecurityHeaders)
+
+	// Request size limiting (always enabled)
+	r.Use(middleware.MaxBytesReader(config.MaxRequestSize))
+
+	// Logging middleware
 	r.Use(hlog.NewHandler(log.Logger))
 	r.Use(hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
 		hlog.FromRequest(r).Info().
@@ -38,20 +67,36 @@ func New(addr string) *Server {
 	r.Use(hlog.RefererHandler("referer"))
 	r.Use(hlog.RequestIDHandler("request_id", "X-Request-ID"))
 
+	// Rate limiting (if configured)
+	if config.RateLimiter != nil {
+		r.Use(middleware.RateLimit(config.RateLimiter))
+	}
+
 	// public routes
 	r.HandleFunc("/healthz", healthHandler).Methods("GET")
 	r.HandleFunc("/hello", helloHandler).Methods("GET")
 
-	// instrument the router with OpenTelemetry HTTP middleware
-
 	return &Server{
 		router: r,
 		addr:   addr,
+		config: config,
 	}
 }
 
 func (s *Server) GetRouter() *mux.Router {
 	return s.router
+}
+
+// GetConfig returns the server configuration
+func (s *Server) GetConfig() *ServerConfig {
+	return s.config
+}
+
+// ApplyAuthMiddleware applies authentication to a subrouter
+func (s *Server) ApplyAuthMiddleware(subrouter *mux.Router) {
+	if s.config != nil && s.config.EnableAuth && len(s.config.APIKeys) > 0 {
+		subrouter.Use(middleware.APIKeyAuth(s.config.APIKeys))
+	}
 }
 
 // Start runs the HTTP server. It returns when the server stops.

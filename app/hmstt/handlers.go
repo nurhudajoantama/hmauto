@@ -76,7 +76,7 @@ func (h *HmsttHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.templates.ExecuteTemplate(w, "index.html", data); err != nil {
 		l.Error().Err(err).Msg("Failed to execute template")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }
 
@@ -163,7 +163,7 @@ func (h *HmsttHandler) returnStateHTML(w http.ResponseWriter, state hmsttState) 
 	}
 
 	if err := h.templates.ExecuteTemplate(w, templateFileName, templateData); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 }
