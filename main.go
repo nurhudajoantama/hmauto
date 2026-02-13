@@ -47,7 +47,7 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to initialize OpenTelemetry")
 	}
 
-	// initialize bbolt
+	// initialize postgres
 	gormPostgres := postgres.NewGorm(config.DB)
 
 	// initialize rabbitmq
@@ -97,10 +97,14 @@ func main() {
 	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_ = srv.Shutdown(closeCtx)
+	if err := srv.Shutdown(closeCtx); err != nil {
+		log.Error().Err(err).Msg("failed to shutdown http server")
+	}
 	rabbitmq.Close(closeCtx, rabbitMQConn)
 	postgres.Close(closeCtx, gormPostgres)
 
-	otelShutdown(closeCtx)
+	if err := otelShutdown(closeCtx); err != nil {
+		log.Error().Err(err).Msg("failed to shutdown OpenTelemetry")
+	}
 	cleanupLog(closeCtx)
 }

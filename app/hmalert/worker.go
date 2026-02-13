@@ -37,7 +37,7 @@ func (w *HmalertWorker) alertConsumer(ctx context.Context) error {
 		for d := range msg {
 			l.Info().Msgf("Received an alert message: %s", d.Body)
 
-			err := w.processAlert(d)
+			err := w.processAlert(ctx, d)
 			if err != nil {
 				l.Error().Err(err).Msg("Failed to process alert message")
 				d.Nack(false, false)
@@ -53,20 +53,15 @@ func (w *HmalertWorker) alertConsumer(ctx context.Context) error {
 	return nil
 }
 
-func (w *HmalertWorker) processAlert(d amqp091.Delivery) error {
-	// Process the alert message here
-
+func (w *HmalertWorker) processAlert(ctx context.Context, d amqp091.Delivery) error {
 	var body alertEvent
-	// Unmarshal the message body into the alertEvent struct
-	// Handle any errors during unmarshaling
 	err := json.Unmarshal(d.Body, &body)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to unmarshal alert message")
 		return err
 	}
 
-	// Further processing can be done here, such as sending notifications
-	err = w.Service.SendDiscordNotification(context.Background(), body)
+	err = w.Service.SendDiscordNotification(ctx, body)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to send Discord message")
 		return err
