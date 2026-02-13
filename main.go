@@ -15,6 +15,7 @@ import (
 	"github.com/nurhudajoantama/hmauto/app/worker"
 	"github.com/nurhudajoantama/hmauto/internal/config"
 	"github.com/nurhudajoantama/hmauto/internal/discord"
+	"github.com/nurhudajoantama/hmauto/internal/health"
 	"github.com/nurhudajoantama/hmauto/internal/instrumentation"
 	"github.com/nurhudajoantama/hmauto/internal/middleware"
 	"github.com/nurhudajoantama/hmauto/internal/postgres"
@@ -94,6 +95,13 @@ func main() {
 		RateLimiter:    rateLimiter,
 	}
 	srv := server.NewWithConfig(config.HTTP.Addr(), serverConfig)
+
+	// Setup health checks
+	healthChecker := health.NewHealthChecker(gormPostgres, rabbitMQConn)
+	r := srv.GetRouter()
+	r.HandleFunc("/health", healthChecker.Handler()).Methods("GET")
+	r.HandleFunc("/ready", healthChecker.ReadinessHandler()).Methods("GET")
+	r.HandleFunc("/live", health.LivenessHandler()).Methods("GET")
 
 	// initialize worker
 	errgrp, ctx := errgroup.WithContext(ctx)

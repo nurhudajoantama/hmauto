@@ -12,6 +12,11 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	batchProcessingTimeout = 30 * time.Second
+	maxBatchSize           = 100
+)
+
 type HmalertHandler struct {
 	Service *HmalerService
 }
@@ -125,7 +130,6 @@ func (h *HmalertHandler) PublishAlertBatch(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Limit batch size
-	const maxBatchSize = 100
 	if len(publishReqs) > maxBatchSize {
 		l.Warn().Int("size", len(publishReqs)).Msg("Batch size exceeds limit")
 		w.WriteHeader(http.StatusBadRequest)
@@ -168,7 +172,7 @@ func (h *HmalertHandler) PublishAlertBatch(w http.ResponseWriter, r *http.Reques
 	errChan := make(chan error, len(publishReqs))
 	
 	// Create a background context with timeout instead of using request context
-	bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	bgCtx, cancel := context.WithTimeout(context.Background(), batchProcessingTimeout)
 	defer cancel()
 
 	for _, publishReq := range publishReqs {

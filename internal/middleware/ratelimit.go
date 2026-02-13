@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,7 +63,7 @@ func (rl *RateLimiter) Allow(identifier string) bool {
 
 	// Refill tokens based on time elapsed
 	elapsed := now.Sub(b.lastSeen)
-	tokensToAdd := int(elapsed / rl.interval * time.Duration(rl.rate))
+	tokensToAdd := int(elapsed.Seconds() / rl.interval.Seconds() * float64(rl.rate))
 	b.tokens = util.Min(b.tokens+tokensToAdd, rl.maxBurst)
 	b.lastSeen = now
 
@@ -94,9 +95,17 @@ func RateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 			l := hlog.FromRequest(r)
 			
 			// Use IP address as identifier
-			ip := r.Header.Get("X-Forwarded-For")
-			if ip == "" {
-				ip = r.RemoteAddr
+			// Extract client IP from X-Forwarded-For (take first IP which is the client)
+			// or fall back to RemoteAddr
+			ip := r.RemoteAddr
+			if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
+				// X-Forwarded-For format: client, proxy1, proxy2
+				// Only trust the first IP (leftmost)
+				if idx := strings.Index(forwardedFor, ","); idx > 0 {
+					ip = strings.TrimSpace(forwardedFor[:idx])
+				} else {
+					ip = strings.TrimSpace(forwardedFor)
+				}
 			}
 
 			if !limiter.Allow(ip) {

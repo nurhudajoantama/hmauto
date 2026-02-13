@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/nurhudajoantama/hmauto/internal/util"
 	"github.com/rs/zerolog/hlog"
 )
 
@@ -31,7 +30,7 @@ func APIKeyAuth(validAPIKeys map[string]bool) func(http.Handler) http.Handler {
 
 			apiKey := parts[1]
 			if !validAPIKeys[apiKey] {
-				l.Warn().Str("key_prefix", apiKey[:util.Min(len(apiKey), 8)]).Msg("Invalid API key")
+				l.Warn().Msg("Invalid API key")
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
