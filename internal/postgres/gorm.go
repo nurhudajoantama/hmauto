@@ -30,8 +30,14 @@ func NewGorm(c config.SQL) *gorm.DB {
 }
 
 func Close(ctx context.Context, db *gorm.DB) {
+	if db == nil {
+		log.Warn().Msg("database connection is nil, skipping close")
+		return
+	}
+
 	c := make(chan struct{})
 	go func() {
+		defer close(c)
 		sqlDB, err := db.DB()
 		if err != nil {
 			log.Error().Err(err).Msg("failed to get database instance for closing")
@@ -40,7 +46,6 @@ func Close(ctx context.Context, db *gorm.DB) {
 		if err := sqlDB.Close(); err != nil {
 			log.Error().Err(err).Msg("failed to close database connection")
 		}
-		close(c)
 	}()
 
 	select {

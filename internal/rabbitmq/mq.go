@@ -12,7 +12,7 @@ import (
 func NewRabbitMQConn(c config.MQTT) *amqp.Connection {
 	conn, err := amqp.Dial(c.BrokerURL())
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to connect to RabbitMQ")
+		log.Fatal().Err(err).Msg("failed to connect to RabbitMQ")
 	}
 	log.Info().Msg("Connected to RabbitMQ")
 
@@ -20,9 +20,13 @@ func NewRabbitMQConn(c config.MQTT) *amqp.Connection {
 }
 
 func NewRabbitMQChannel(conn *amqp.Connection) *amqp.Channel {
+	if conn == nil {
+		log.Fatal().Msg("rabbitmq connection is nil")
+	}
+
 	ch, err := conn.Channel()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to open a channel")
+		log.Fatal().Err(err).Msg("failed to open rabbitmq channel")
 	}
 	log.Info().Msg("Opened a channel to RabbitMQ")
 
@@ -30,12 +34,17 @@ func NewRabbitMQChannel(conn *amqp.Connection) *amqp.Channel {
 }
 
 func Close(ctx context.Context, conn *amqp.Connection) {
+	if conn == nil {
+		log.Warn().Msg("rabbitmq connection is nil, skipping close")
+		return
+	}
+
 	c := make(chan struct{})
 	go func() {
+		defer close(c)
 		if err := conn.Close(); err != nil {
 			log.Error().Err(err).Msg("failed to close RabbitMQ connection")
 		}
-		close(c)
 	}()
 
 	select {

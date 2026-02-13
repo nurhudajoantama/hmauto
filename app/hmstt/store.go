@@ -2,6 +2,7 @@ package hmstt
 
 import (
 	"context"
+	"fmt"
 
 	"gorm.io/gorm"
 )
@@ -11,8 +12,9 @@ type HmsttStore struct {
 }
 
 func NewStore(db *gorm.DB) *HmsttStore {
-	// Auto migrate the hmsttState model
-	db.AutoMigrate(&hmsttState{})
+	if err := db.AutoMigrate(&hmsttState{}); err != nil {
+		panic(fmt.Errorf("failed to migrate hmstt state: %w", err))
+	}
 
 	return &HmsttStore{db: db}
 }

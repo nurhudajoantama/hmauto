@@ -15,7 +15,9 @@ import (
 	"github.com/nurhudajoantama/hmauto/app/worker"
 	"github.com/nurhudajoantama/hmauto/internal/config"
 	"github.com/nurhudajoantama/hmauto/internal/discord"
+	"github.com/nurhudajoantama/hmauto/internal/health"
 	"github.com/nurhudajoantama/hmauto/internal/instrumentation"
+	"github.com/nurhudajoantama/hmauto/internal/middleware"
 	"github.com/nurhudajoantama/hmauto/internal/postgres"
 	"github.com/nurhudajoantama/hmauto/internal/rabbitmq"
 	"golang.org/x/sync/errgroup"
@@ -47,7 +49,7 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to initialize OpenTelemetry")
 	}
 
-	// initialize bbolt
+	// initialize postgres
 	gormPostgres := postgres.NewGorm(config.DB)
 
 	// initialize rabbitmq
@@ -60,8 +62,46 @@ func main() {
 	discordWebhookWarning := discord.NewDiscordWebhook(httpClient, config.DiscordWebhookWarning)
 	discordWebhookError := discord.NewDiscordWebhook(httpClient, config.DiscordWebhookError)
 
-	// initialize server
-	srv := server.New(config.HTTP.Addr())
+	// prepare security configuration
+	apiKeyMap := make(map[string]bool)
+	for _, key := range config.Security.APIKeys {
+		apiKeyMap[key] = true
+	}
+
+	// Set default values if not configured
+	maxRequestSize := config.Security.MaxRequestSize
+	if maxRequestSize == 0 {
+		maxRequestSize = 1024 * 1024 // 1MB default
+	}
+
+	rateLimitPerMin := config.Security.RateLimitPerMin
+	if rateLimitPerMin == 0 {
+		rateLimitPerMin = 60 // 60 requests per minute default
+	}
+
+	rateLimitBurst := config.Security.RateLimitBurst
+	if rateLimitBurst == 0 {
+		rateLimitBurst = 10 // 10 burst default
+	}
+
+	// Create rate limiter
+	rateLimiter := middleware.NewRateLimiter(rateLimitPerMin, time.Minute, rateLimitBurst)
+
+	// initialize server with security config
+	serverConfig := &server.ServerConfig{
+		APIKeys:        apiKeyMap,
+		EnableAuth:     config.Security.EnableAuth,
+		MaxRequestSize: maxRequestSize,
+		RateLimiter:    rateLimiter,
+	}
+	srv := server.NewWithConfig(config.HTTP.Addr(), serverConfig)
+
+	// Setup health checks
+	healthChecker := health.NewHealthChecker(gormPostgres, rabbitMQConn)
+	r := srv.GetRouter()
+	r.HandleFunc("/health", healthChecker.Handler()).Methods("GET")
+	r.HandleFunc("/ready", healthChecker.ReadinessHandler()).Methods("GET")
+	r.HandleFunc("/live", health.LivenessHandler()).Methods("GET")
 
 	// initialize worker
 	errgrp, ctx := errgroup.WithContext(ctx)
@@ -97,10 +137,14 @@ func main() {
 	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_ = srv.Shutdown(closeCtx)
+	if err := srv.Shutdown(closeCtx); err != nil {
+		log.Error().Err(err).Msg("failed to shutdown http server")
+	}
 	rabbitmq.Close(closeCtx, rabbitMQConn)
 	postgres.Close(closeCtx, gormPostgres)
 
-	otelShutdown(closeCtx)
+	if err := otelShutdown(closeCtx); err != nil {
+		log.Error().Err(err).Msg("failed to shutdown OpenTelemetry")
+	}
 	cleanupLog(closeCtx)
 }

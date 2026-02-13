@@ -34,7 +34,7 @@ func (s *HmsttService) GetState(ctx context.Context, tipe, key string) (string, 
 
 	generatedKey, ok := generateKey(tipe, key)
 	if !ok {
-		l.Error().Err(errors.New("INVALID TYPE OR KEY")).Msg("GetState failed")
+		l.Error().Err(errors.New("invalid type or key")).Msg("GetState failed")
 		return "", errors.New("INVALID TYPE OR KEY")
 	}
 
@@ -79,11 +79,24 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 
 	generatedKey, ok := canTypeChangedWithKey(tipe, key, value)
 	if !ok {
-		l.Error().Err(errors.New("INVALID TYPE OR KEY")).Msg("SetState failed")
+		l.Error().Err(errors.New("invalid type or key")).Msg("SetState failed")
 		return errors.New("INVALID TYPE OR KEY")
 	}
 
 	tx := s.store.Transaction()
+	if tx.Error != nil {
+		l.Error().Err(tx.Error).Msg("failed to start transaction")
+		return errors.New("SET STATE ERROR")
+	}
+
+	committed := false
+	defer func() {
+		if !committed {
+			if err := s.store.Rollback(tx); err != nil {
+				l.Error().Err(err).Msg("failed to rollback transaction")
+			}
+		}
+	}()
 
 	state, err := s.store.GetState(ctx, generatedKey)
 	if err != nil {
@@ -96,23 +109,31 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 	err = s.store.SetStateTx(ctx, tx, &state)
 	if err != nil {
 		l.Error().Err(err).Msg("SetState failed")
-		s.store.Rollback(tx)
 		return errors.New("SET STATE ERROR")
 	}
 
 	err = s.event.StateChange(ctx, generatedKey, value)
 	if err != nil {
 		l.Error().Err(err).Msg("StateChange failed")
-		s.store.Rollback(tx)
 		return errors.New("STATE CHANGE ERROR")
 	}
-	s.store.Commit(tx)
 
-	go s.hmalertService.PublishAlert(ctx, hmalert.PublishAlertBody{
+	if err := s.store.Commit(tx); err != nil {
+		l.Error().Err(err).Msg("failed to commit state transaction")
+		return errors.New("SET STATE ERROR")
+	}
+	committed = true
+
+	alertCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := s.hmalertService.PublishAlert(alertCtx, hmalert.PublishAlertBody{
 		Tipe:    "Hmstate Change",
 		Level:   hmalert.LEVEL_INFO,
 		Message: fmt.Sprintf("State %s changed to %s", generatedKey, value),
-	})
+	}); err != nil {
+		l.Error().Err(err).Msg("failed to publish hmstt state-change alert")
+	}
 
 	return nil
 }
