@@ -69,7 +69,7 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 	})
 	l.Info().Msg("Handling SetState service")
 
-	if _, ok := canTypeChangedWithKey(tipe, key, value); !ok {
+	if !canTypeChangedWithKey(tipe, key, value) {
 		l.Error().Err(errors.New("invalid type or key")).Msg("SetState failed")
 		return errors.New("INVALID TYPE OR KEY")
 	}

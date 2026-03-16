@@ -9,7 +9,5 @@ const (
 	STATE_OFF = "off"
 	STATE_ON  = "on"
 
-	ERR_STRING = "ERR"
-
 	KEY_DELIMITER = "."
 )
