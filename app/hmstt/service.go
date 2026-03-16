@@ -95,7 +95,7 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 	defer cancel()
 
 	if err := s.hmalertService.PublishAlert(alertCtx, hmalert.PublishAlertBody{
-		Tipe:    "Hmstate Change",
+		Type:    "Hmstate Change",
 		Level:   hmalert.LEVEL_INFO,
 		Message: fmt.Sprintf("State %s.%s changed to %s", tipe, key, value),
 	}); err != nil {

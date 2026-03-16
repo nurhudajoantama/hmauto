@@ -14,15 +14,21 @@ type HmsttHandler struct {
 	service *HmsttService
 }
 
-type stateResponse struct {
-	Type      string `json:"type"`
-	Key       string `json:"key"`
-	Value     string `json:"value"`
-	UpdatedAt string `json:"updated_at"`
+// StateResponse is the JSON representation of a single state entry.
+type StateResponse struct {
+	Type      string `json:"type"       example:"switch"`
+	Key       string `json:"key"        example:"modem"`
+	Value     string `json:"value"      example:"on"`
+	UpdatedAt string `json:"updated_at" example:"2026-03-16T12:34:56Z"`
 }
 
-func entryToResponse(e StateEntry) stateResponse {
-	return stateResponse{
+// SetStateRequest is the request body for setting a state value.
+type SetStateRequest struct {
+	Value string `json:"value" example:"on"`
+}
+
+func entryToResponse(e StateEntry) StateResponse {
+	return StateResponse{
 		Type:      e.Type,
 		Key:       e.K,
 		Value:     e.Value,
@@ -33,15 +39,26 @@ func entryToResponse(e StateEntry) stateResponse {
 func RegisterHandlers(s *server.Server, svc *HmsttService) {
 	h := &HmsttHandler{service: svc}
 
-	protected := s.GetRouter().PathPrefix("/hmstt").Subrouter()
-	s.ApplyAuthMiddleware(protected)
+	v1 := s.GetRouter().PathPrefix("/v1").Subrouter()
+	s.ApplyAuthMiddleware(v1)
 
-	protected.HandleFunc("/states", h.listAllStates).Methods("GET")
-	protected.HandleFunc("/states/{type}", h.listStatesByType).Methods("GET")
-	protected.HandleFunc("/state/{type}/{key}", h.getState).Methods("GET")
-	protected.HandleFunc("/state/{type}/{key}", h.setState).Methods("POST")
+	v1.HandleFunc("/states", h.listAllStates).Methods("GET")
+	v1.HandleFunc("/states/{type}", h.listStatesByType).Methods("GET")
+	v1.HandleFunc("/states/{type}/{key}", h.getState).Methods("GET")
+	v1.HandleFunc("/states/{type}/{key}", h.setState).Methods("PUT")
 }
 
+// listAllStates godoc
+//
+//	@Summary		List all states
+//	@Description	Returns all states across every type
+//	@Tags			states
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Success		200	{object}	response.JsonResponse{data=[]StateResponse}	"List of states"
+//	@Failure		401	{object}	response.JsonResponse						"Unauthorized"
+//	@Failure		500	{object}	response.JsonResponse						"Internal error"
+//	@Router			/states [get]
 func (h *HmsttHandler) listAllStates(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
@@ -54,18 +71,30 @@ func (h *HmsttHandler) listAllStates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := make([]stateResponse, 0, len(entries))
+	data := make([]StateResponse, 0, len(entries))
 	for _, e := range entries {
 		data = append(data, entryToResponse(e))
 	}
 	response.SuccessResponse(w, data)
 }
 
+// listStatesByType godoc
+//
+//	@Summary		List states by type
+//	@Description	Returns all states for a given type (e.g. switch)
+//	@Tags			states
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Param			type	path		string									true	"State type"	example(switch)
+//	@Success		200		{object}	response.JsonResponse{data=[]StateResponse}	"List of states"
+//	@Failure		401		{object}	response.JsonResponse						"Unauthorized"
+//	@Failure		404		{object}	response.JsonResponse						"No states found for type"
+//	@Failure		500		{object}	response.JsonResponse						"Internal error"
+//	@Router			/states/{type} [get]
 func (h *HmsttHandler) listStatesByType(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
-	p := mux.Vars(r)
-	tipe := p["type"]
+	tipe := mux.Vars(r)["type"]
 
 	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
 		return c.Str("hmstt_type", tipe)
@@ -83,13 +112,26 @@ func (h *HmsttHandler) listStatesByType(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	data := make([]stateResponse, 0, len(entries))
+	data := make([]StateResponse, 0, len(entries))
 	for _, e := range entries {
 		data = append(data, entryToResponse(e))
 	}
 	response.SuccessResponse(w, data)
 }
 
+// getState godoc
+//
+//	@Summary		Get a single state
+//	@Description	Returns the state for a specific type and key
+//	@Tags			states
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Param			type	path		string									true	"State type"	example(switch)
+//	@Param			key		path		string									true	"State key"		example(modem)
+//	@Success		200		{object}	response.JsonResponse{data=StateResponse}	"State entry"
+//	@Failure		401		{object}	response.JsonResponse						"Unauthorized"
+//	@Failure		404		{object}	response.JsonResponse						"State not found"
+//	@Router			/states/{type}/{key} [get]
 func (h *HmsttHandler) getState(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
@@ -112,6 +154,22 @@ func (h *HmsttHandler) getState(w http.ResponseWriter, r *http.Request) {
 	response.SuccessResponse(w, entryToResponse(entry))
 }
 
+// setState godoc
+//
+//	@Summary		Set a state value
+//	@Description	Creates or updates the state for a specific type and key. Valid types: switch (values: on, off)
+//	@Tags			states
+//	@Accept			json
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Param			type	path		string									true	"State type"	example(switch)
+//	@Param			key		path		string									true	"State key"		example(modem)
+//	@Param			body	body		SetStateRequest							true	"State value"
+//	@Success		200		{object}	response.JsonResponse{data=StateResponse}	"Updated state"
+//	@Failure		400		{object}	response.JsonResponse						"Invalid type/key/value"
+//	@Failure		401		{object}	response.JsonResponse						"Unauthorized"
+//	@Failure		500		{object}	response.JsonResponse						"Internal error"
+//	@Router			/states/{type}/{key} [put]
 func (h *HmsttHandler) setState(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
@@ -124,9 +182,7 @@ func (h *HmsttHandler) setState(w http.ResponseWriter, r *http.Request) {
 	})
 	l.Info().Msg("Handling setState request")
 
-	var body struct {
-		Value string `json:"value"`
-	}
+	var body SetStateRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		l.Error().Err(err).Msg("setState: failed to decode body")
 		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body", err)

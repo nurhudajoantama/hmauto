@@ -95,7 +95,7 @@ func (s *HmalerService) PublishAlert(ctx context.Context, b PublishAlertBody) er
 	l.Info().Msgf("Publishing alert - Level: %s, Message: %s", b.Level, b.Message)
 
 	body := alertEvent{
-		Type:      b.Tipe,
+		Type:      b.Type,
 		Level:     b.Level,
 		Message:   b.Message,
 		Timestamp: time.Now().Unix(),

@@ -1,3 +1,22 @@
+// Package main is the entry point for the hmauto home automation backend.
+//
+//	@title			hmauto API
+//	@version		1.0
+//	@description	Home automation backend API for IoT state management, alerting, and internet monitoring.
+//
+//	@host		localhost:8080
+//	@BasePath	/v1
+//	@schemes	http https
+//
+//	@securityDefinitions.apikey	ApiKeyAuth
+//	@in							header
+//	@name						Authorization
+//	@description				Format: Bearer {api-key}
+//
+//	@securityDefinitions.apikey	AdminKeyAuth
+//	@in							header
+//	@name						Authorization
+//	@description				Format: Bearer {admin-key}
 package main
 
 import (
@@ -18,6 +37,7 @@ import (
 	"github.com/nurhudajoantama/hmauto/internal/apikey"
 	"github.com/nurhudajoantama/hmauto/internal/config"
 	"github.com/nurhudajoantama/hmauto/internal/discord"
+	_ "github.com/nurhudajoantama/hmauto/docs"
 	"github.com/nurhudajoantama/hmauto/internal/health"
 	"github.com/nurhudajoantama/hmauto/internal/instrumentation"
 	"github.com/nurhudajoantama/hmauto/internal/middleware"
@@ -103,9 +123,10 @@ func main() {
 	}
 	srv := server.NewWithConfig(cfg.HTTP.Addr(), serverConfig)
 
-	// Setup health checks
+	// Health check endpoints (unversioned — used by K8s probes)
 	healthChecker := health.NewHealthChecker(rdb, rabbitMQConn)
 	r := srv.GetRouter()
+	r.HandleFunc("/healthz", health.LivenessHandler()).Methods("GET")
 	r.HandleFunc("/health", healthChecker.Handler()).Methods("GET")
 	r.HandleFunc("/ready", healthChecker.ReadinessHandler()).Methods("GET")
 	r.HandleFunc("/live", health.LivenessHandler()).Methods("GET")

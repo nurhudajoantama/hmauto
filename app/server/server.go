@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/hlog"
 	"github.com/rs/zerolog/log"
+	httpSwagger "github.com/swaggo/http-swagger"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -67,10 +68,13 @@ func NewWithConfig(addr string, config *ServerConfig) *Server {
 	r.Use(middleware.PrometheusMiddleware)
 	r.Use(middleware.TraceIDMiddleware)
 
-	// Public routes
-	r.HandleFunc("/healthz", healthHandler).Methods("GET")
-	r.HandleFunc("/hello", helloHandler).Methods("GET")
+	// Prometheus metrics (no auth — Prometheus scrapes this directly)
 	r.Handle("/metrics", promhttp.Handler()).Methods("GET")
+
+	// Swagger UI
+	r.PathPrefix("/docs/").Handler(httpSwagger.Handler(
+		httpSwagger.URL("/docs/doc.json"),
+	))
 
 	return &Server{
 		router: r,
@@ -136,14 +140,4 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	log.Info().Msg("Shutting down HTTP server")
 	return s.httpServer.Shutdown(ctx)
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
-}
-
-func helloHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Hello, World!"))
 }

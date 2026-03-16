@@ -13,6 +13,18 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// CreateKeyRequest is the request body for creating an API key.
+type CreateKeyRequest struct {
+	Label string `json:"label" example:"iot-device-1"`
+}
+
+// CreateKeyResponse is returned once on key creation. The key is never shown again.
+type CreateKeyResponse struct {
+	Key       string    `json:"key"        example:"a1b2c3d4e5f6..."`
+	Label     string    `json:"label"      example:"iot-device-1"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Handler struct {
 	svc *Service
 }
@@ -20,7 +32,7 @@ type Handler struct {
 func RegisterHandlers(s *server.Server, svc *Service) {
 	h := &Handler{svc: svc}
 
-	admin := s.GetRouter().PathPrefix("/admin").Subrouter()
+	admin := s.GetRouter().PathPrefix("/v1/admin").Subrouter()
 	s.ApplyAdminMiddleware(admin)
 
 	admin.HandleFunc("/apikeys", h.listKeys).Methods("GET")
@@ -28,6 +40,17 @@ func RegisterHandlers(s *server.Server, svc *Service) {
 	admin.HandleFunc("/apikeys/{key}", h.revokeKey).Methods("DELETE")
 }
 
+// listKeys godoc
+//
+//	@Summary		List API keys
+//	@Description	Returns metadata for all active API keys. The full key value is never returned.
+//	@Tags			admin
+//	@Produce		json
+//	@Security		AdminKeyAuth
+//	@Success		200	{object}	response.JsonResponse{data=[]apikey.KeyMetadata}	"List of API key metadata"
+//	@Failure		401	{object}	response.JsonResponse								"Unauthorized"
+//	@Failure		500	{object}	response.JsonResponse								"Internal error"
+//	@Router			/admin/apikeys [get]
 func (h *Handler) listKeys(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
@@ -43,14 +66,26 @@ func (h *Handler) listKeys(w http.ResponseWriter, r *http.Request) {
 	response.SuccessResponse(w, keys)
 }
 
+// createKey godoc
+//
+//	@Summary		Create an API key
+//	@Description	Creates a new API key. The full key is returned only in this response — store it securely.
+//	@Tags			admin
+//	@Accept			json
+//	@Produce		json
+//	@Security		AdminKeyAuth
+//	@Param			body	body		CreateKeyRequest									true	"Key label"
+//	@Success		201		{object}	response.JsonResponse{data=CreateKeyResponse}		"Created key (shown once)"
+//	@Failure		400		{object}	response.JsonResponse								"Validation error"
+//	@Failure		401		{object}	response.JsonResponse								"Unauthorized"
+//	@Failure		500		{object}	response.JsonResponse								"Internal error"
+//	@Router			/admin/apikeys [post]
 func (h *Handler) createKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
 	l.Info().Msg("Handling createKey request")
 
-	var body struct {
-		Label string `json:"label"`
-	}
+	var body CreateKeyRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		l.Error().Err(err).Msg("createKey: failed to decode body")
 		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body", err)
@@ -68,23 +103,30 @@ func (h *Handler) createKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"data": map[string]interface{}{
-			"key":        key,
-			"label":      body.Label,
-			"created_at": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-		},
+	response.CreatedResponse(w, CreateKeyResponse{
+		Key:       key,
+		Label:     body.Label,
+		CreatedAt: time.Now().UTC(),
 	})
 }
 
+// revokeKey godoc
+//
+//	@Summary		Revoke an API key
+//	@Description	Permanently revokes an API key by its full key value
+//	@Tags			admin
+//	@Produce		json
+//	@Security		AdminKeyAuth
+//	@Param			key	path		string					true	"Full API key to revoke"
+//	@Success		200	{object}	response.JsonResponse	"Key revoked"
+//	@Failure		401	{object}	response.JsonResponse	"Unauthorized"
+//	@Failure		404	{object}	response.JsonResponse	"Key not found"
+//	@Failure		500	{object}	response.JsonResponse	"Internal error"
+//	@Router			/admin/apikeys/{key} [delete]
 func (h *Handler) revokeKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
-	p := mux.Vars(r)
-	key := p["key"]
+	key := mux.Vars(r)["key"]
 
 	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
 		return c.Str("apikey_hint", key[:min(4, len(key))])
@@ -103,4 +145,3 @@ func (h *Handler) revokeKey(w http.ResponseWriter, r *http.Request) {
 
 	response.SuccessResponse(w, nil)
 }
-

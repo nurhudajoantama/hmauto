@@ -1,0 +1,690 @@
+{
+    "schemes": [
+        "http",
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "Home automation backend API for IoT state management, alerting, and internet monitoring.",
+        "title": "hmauto API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/v1",
+    "paths": {
+        "/admin/apikeys": {
+            "get": {
+                "security": [
+                    {
+                        "AdminKeyAuth": []
+                    }
+                ],
+                "description": "Returns metadata for all active API keys. The full key value is never returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List API keys",
+                "responses": {
+                    "200": {
+                        "description": "List of API key metadata",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/apikey.KeyMetadata"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "AdminKeyAuth": []
+                    }
+                ],
+                "description": "Creates a new API key. The full key is returned only in this response — store it securely.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Create an API key",
+                "parameters": [
+                    {
+                        "description": "Key label",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/hmapikey.CreateKeyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created key (shown once)",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/hmapikey.CreateKeyResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Validation error",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/apikeys/{key}": {
+            "delete": {
+                "security": [
+                    {
+                        "AdminKeyAuth": []
+                    }
+                ],
+                "description": "Permanently revokes an API key by its full key value",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Revoke an API key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Full API key to revoke",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Key revoked",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Key not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/alerts": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Publishes a single alert to the alert pipeline (RabbitMQ → Discord)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "alerts"
+                ],
+                "summary": "Publish an alert",
+                "parameters": [
+                    {
+                        "description": "Alert payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/hmalert.PublishAlertRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Alert published",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Validation error",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/alerts/batch": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Publishes up to 100 alerts concurrently to the alert pipeline",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "alerts"
+                ],
+                "summary": "Publish alerts in batch",
+                "parameters": [
+                    {
+                        "description": "Array of alert payloads (max 100)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/hmalert.PublishAlertRequest"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "All alerts published",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Validation error or batch too large",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "One or more alerts failed",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/states": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns all states across every type",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "states"
+                ],
+                "summary": "List all states",
+                "responses": {
+                    "200": {
+                        "description": "List of states",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/hmstt.StateResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/states/{type}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns all states for a given type (e.g. switch)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "states"
+                ],
+                "summary": "List states by type",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "switch",
+                        "description": "State type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of states",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/hmstt.StateResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No states found for type",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/states/{type}/{key}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns the state for a specific type and key",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "states"
+                ],
+                "summary": "Get a single state",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "switch",
+                        "description": "State type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "modem",
+                        "description": "State key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "State entry",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/hmstt.StateResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "State not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Creates or updates the state for a specific type and key. Valid types: switch (values: on, off)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "states"
+                ],
+                "summary": "Set a state value",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "switch",
+                        "description": "State type",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "modem",
+                        "description": "State key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "State value",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/hmstt.SetStateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated state",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/hmstt.StateResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid type/key/value",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/response.JsonResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "apikey.KeyMetadata": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "key_hint": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "last_used": {
+                    "type": "string"
+                }
+            }
+        },
+        "hmalert.PublishAlertRequest": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "string",
+                    "example": "info"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Internet is down"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "internet"
+                }
+            }
+        },
+        "hmapikey.CreateKeyRequest": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "example": "iot-device-1"
+                }
+            }
+        },
+        "hmapikey.CreateKeyResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string",
+                    "example": "a1b2c3d4e5f6..."
+                },
+                "label": {
+                    "type": "string",
+                    "example": "iot-device-1"
+                }
+            }
+        },
+        "hmstt.SetStateRequest": {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "type": "string",
+                    "example": "on"
+                }
+            }
+        },
+        "hmstt.StateResponse": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "example": "modem"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "switch"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-03-16T12:34:56Z"
+                },
+                "value": {
+                    "type": "string",
+                    "example": "on"
+                }
+            }
+        },
+        "response.JsonResponse": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "error": {},
+                "message": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "AdminKeyAuth": {
+            "description": "Format: Bearer {admin-key}",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        },
+        "ApiKeyAuth": {
+            "description": "Format: Bearer {api-key}",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

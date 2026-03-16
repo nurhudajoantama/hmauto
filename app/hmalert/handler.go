@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nurhudajoantama/hmauto/app/server"
+	"github.com/nurhudajoantama/hmauto/internal/response"
 	"github.com/nurhudajoantama/hmauto/internal/validation"
 	"github.com/rs/zerolog"
 )
@@ -26,186 +27,153 @@ func RegisterHandler(s *server.Server, svc *HmalerService) {
 		Service: svc,
 	}
 
-	r := s.GetRouter()
-	hmalertGroup := r.PathPrefix("/hmalert").Subrouter()
-	
-	// Apply authentication if enabled
-	s.ApplyAuthMiddleware(hmalertGroup)
-	
-	hmalertGroup.HandleFunc("/publish", h.PublishAlert).Methods("GET", "POST")
-	hmalertGroup.HandleFunc("/publishbatch", h.PublishAlertBatch).Methods("POST")
+	v1 := s.GetRouter().PathPrefix("/v1").Subrouter()
+	s.ApplyAuthMiddleware(v1)
+
+	v1.HandleFunc("/alerts", h.publishAlert).Methods("POST")
+	v1.HandleFunc("/alerts/batch", h.publishAlertBatch).Methods("POST")
 }
 
-func (h *HmalertHandler) PublishAlert(w http.ResponseWriter, r *http.Request) {
+// publishAlert godoc
+//
+//	@Summary		Publish an alert
+//	@Description	Publishes a single alert to the alert pipeline (RabbitMQ → Discord)
+//	@Tags			alerts
+//	@Accept			json
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Param			body	body		PublishAlertRequest					true	"Alert payload"
+//	@Success		200		{object}	response.JsonResponse				"Alert published"
+//	@Failure		400		{object}	response.JsonResponse				"Validation error"
+//	@Failure		401		{object}	response.JsonResponse				"Unauthorized"
+//	@Failure		500		{object}	response.JsonResponse				"Internal error"
+//	@Router			/alerts [post]
+func (h *HmalertHandler) publishAlert(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
-	l.Info().Msg("Handling PublishAlert request")
+	l.Info().Msg("Handling publishAlert request")
 
-	var publishReq PublishAlertBody
-
-	switch r.Method {
-	case http.MethodGet:
-		q := r.URL.Query()
-		publishReq.Level = validation.SanitizeString(q.Get("level"))
-		publishReq.Message = validation.SanitizeString(q.Get("message"))
-		publishReq.Tipe = validation.SanitizeString(q.Get("tipe"))
-	case http.MethodPost:
-		// parse from json
-		body := r.Body
-		defer body.Close()
-		decoder := json.NewDecoder(body)
-		err := decoder.Decode(&publishReq)
-		if err != nil {
-			l.Error().Err(err).Msg("Failed to parse request body")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid request body"))
-			return
-		}
-		// Sanitize inputs
-		publishReq.Level = validation.SanitizeString(publishReq.Level)
-		publishReq.Message = validation.SanitizeString(publishReq.Message)
-		publishReq.Tipe = validation.SanitizeString(publishReq.Tipe)
-	default:
-		l.Error().Msg("Unsupported HTTP method")
-		w.WriteHeader(http.StatusMethodNotAllowed)
+	var req PublishAlertRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		l.Error().Err(err).Msg("publishAlert: failed to decode body")
+		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body", err)
 		return
 	}
 
-	// Validate inputs
+	req.Level = validation.SanitizeString(req.Level)
+	req.Message = validation.SanitizeString(req.Message)
+	req.Type = validation.SanitizeString(req.Type)
+
 	allowedLevels := []string{LEVEL_INFO, LEVEL_WARNING, LEVEL_ERROR}
-	if err := validation.ValidateAlertLevel(publishReq.Level, allowedLevels); err != nil {
-		l.Warn().Err(err).Str("level", publishReq.Level).Msg("Invalid alert level")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Invalid alert level"))
+	if err := validation.ValidateAlertLevel(req.Level, allowedLevels); err != nil {
+		l.Warn().Err(err).Str("level", req.Level).Msg("publishAlert: invalid level")
+		response.ErrorResponse(w, http.StatusBadRequest, "invalid alert level", err)
+		return
+	}
+	if err := validation.ValidateAlertMessage(req.Message); err != nil {
+		l.Warn().Err(err).Msg("publishAlert: invalid message")
+		response.ErrorResponse(w, http.StatusBadRequest, "invalid alert message", err)
+		return
+	}
+	if err := validation.ValidateAlertType(req.Type); err != nil {
+		l.Warn().Err(err).Msg("publishAlert: invalid type")
+		response.ErrorResponse(w, http.StatusBadRequest, "invalid alert type", err)
 		return
 	}
 
-	if err := validation.ValidateAlertMessage(publishReq.Message); err != nil {
-		l.Warn().Err(err).Msg("Invalid alert message")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Invalid alert message"))
+	if err := h.Service.PublishAlert(ctx, req); err != nil {
+		l.Error().Err(err).Msg("publishAlert: failed to publish")
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to publish alert", err)
 		return
 	}
 
-	if err := validation.ValidateAlertType(publishReq.Tipe); err != nil {
-		l.Warn().Err(err).Msg("Invalid alert type")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Invalid alert type"))
-		return
-	}
-
-	l.Debug().Str("level", publishReq.Level).Str("message", publishReq.Message).Str("type", publishReq.Tipe).Msg("Validated PublishAlert request")
-
-	err := h.Service.PublishAlert(ctx, publishReq)
-	if err != nil {
-		l.Error().Err(err).Msg("Failed to publish alert")
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("Failed to publish alert"))
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Alert published successfully"))
-
-	l.Trace().Msgf("PublishAlert request handled successfully")
+	response.SuccessResponse(w, nil)
 }
 
-func (h *HmalertHandler) PublishAlertBatch(w http.ResponseWriter, r *http.Request) {
+// publishAlertBatch godoc
+//
+//	@Summary		Publish alerts in batch
+//	@Description	Publishes up to 100 alerts concurrently to the alert pipeline
+//	@Tags			alerts
+//	@Accept			json
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Param			body	body		[]PublishAlertRequest				true	"Array of alert payloads (max 100)"
+//	@Success		200		{object}	response.JsonResponse				"All alerts published"
+//	@Failure		400		{object}	response.JsonResponse				"Validation error or batch too large"
+//	@Failure		401		{object}	response.JsonResponse				"Unauthorized"
+//	@Failure		500		{object}	response.JsonResponse				"One or more alerts failed"
+//	@Router			/alerts/batch [post]
+func (h *HmalertHandler) publishAlertBatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
-	l.Info().Msg("Handling PublishAlertBatch request")
+	l.Info().Msg("Handling publishAlertBatch request")
 
-	var publishReqs []PublishAlertBody
-
-	// parse from json
-	body := r.Body
-	defer body.Close()
-	decoder := json.NewDecoder(body)
-	err := decoder.Decode(&publishReqs)
-	if err != nil {
-		l.Error().Err(err).Msg("Failed to parse request body")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Invalid request body"))
+	var reqs []PublishAlertRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
+		l.Error().Err(err).Msg("publishAlertBatch: failed to decode body")
+		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body", err)
 		return
 	}
 
-	// Limit batch size
-	if len(publishReqs) > maxBatchSize {
-		l.Warn().Int("size", len(publishReqs)).Msg("Batch size exceeds limit")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Batch size exceeds limit"))
+	if len(reqs) > maxBatchSize {
+		l.Warn().Int("size", len(reqs)).Msg("publishAlertBatch: batch too large")
+		response.ErrorResponse(w, http.StatusBadRequest, "batch size exceeds limit of 100", nil)
 		return
 	}
 
-	// Validate all requests first
 	allowedLevels := []string{LEVEL_INFO, LEVEL_WARNING, LEVEL_ERROR}
-	for i := range publishReqs {
-		// Sanitize inputs
-		publishReqs[i].Level = validation.SanitizeString(publishReqs[i].Level)
-		publishReqs[i].Message = validation.SanitizeString(publishReqs[i].Message)
-		publishReqs[i].Tipe = validation.SanitizeString(publishReqs[i].Tipe)
+	for i := range reqs {
+		reqs[i].Level = validation.SanitizeString(reqs[i].Level)
+		reqs[i].Message = validation.SanitizeString(reqs[i].Message)
+		reqs[i].Type = validation.SanitizeString(reqs[i].Type)
 
-		// Validate
-		if err := validation.ValidateAlertLevel(publishReqs[i].Level, allowedLevels); err != nil {
-			l.Warn().Err(err).Int("index", i).Msg("Invalid alert level in batch")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid alert level in batch"))
+		if err := validation.ValidateAlertLevel(reqs[i].Level, allowedLevels); err != nil {
+			l.Warn().Err(err).Int("index", i).Msg("publishAlertBatch: invalid level")
+			response.ErrorResponse(w, http.StatusBadRequest, "invalid alert level in batch", err)
 			return
 		}
-		if err := validation.ValidateAlertMessage(publishReqs[i].Message); err != nil {
-			l.Warn().Err(err).Int("index", i).Msg("Invalid alert message in batch")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid alert message in batch"))
+		if err := validation.ValidateAlertMessage(reqs[i].Message); err != nil {
+			l.Warn().Err(err).Int("index", i).Msg("publishAlertBatch: invalid message")
+			response.ErrorResponse(w, http.StatusBadRequest, "invalid alert message in batch", err)
 			return
 		}
-		if err := validation.ValidateAlertType(publishReqs[i].Tipe); err != nil {
-			l.Warn().Err(err).Int("index", i).Msg("Invalid alert type in batch")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid alert type in batch"))
+		if err := validation.ValidateAlertType(reqs[i].Type); err != nil {
+			l.Warn().Err(err).Int("index", i).Msg("publishAlertBatch: invalid type")
+			response.ErrorResponse(w, http.StatusBadRequest, "invalid alert type in batch", err)
 			return
 		}
 	}
 
-	// Process batch asynchronously using background context to avoid cancellation
-	// when request completes, but wait for all to finish before responding
 	var wg sync.WaitGroup
-	errChan := make(chan error, len(publishReqs))
-	
-	// Create a background context with timeout instead of using request context
+	errChan := make(chan error, len(reqs))
+
 	bgCtx, cancel := context.WithTimeout(context.Background(), batchProcessingTimeout)
 	defer cancel()
 
-	for _, publishReq := range publishReqs {
+	for _, req := range reqs {
 		wg.Add(1)
-		go func(req PublishAlertBody) {
+		go func(r PublishAlertRequest) {
 			defer wg.Done()
-			l.Debug().Str("level", req.Level).Str("message", req.Message).Str("type", req.Tipe).Msg("Processing batch alert")
-			if err := h.Service.PublishAlert(bgCtx, req); err != nil {
-				l.Error().Err(err).Msg("Failed to publish alert in batch")
+			if err := h.Service.PublishAlert(bgCtx, r); err != nil {
+				l.Error().Err(err).Msg("publishAlertBatch: failed to publish one alert")
 				errChan <- err
 			}
-		}(publishReq)
+		}(req)
 	}
 
-	// Wait for all goroutines to complete
 	wg.Wait()
 	close(errChan)
 
-	// Check if any errors occurred
 	var errs []error
 	for err := range errChan {
 		errs = append(errs, err)
 	}
-
 	if len(errs) > 0 {
-		l.Error().Int("error_count", len(errs)).Msg("Some alerts failed to publish")
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("Some alerts failed to publish"))
+		l.Error().Int("error_count", len(errs)).Msg("publishAlertBatch: some alerts failed")
+		response.ErrorResponse(w, http.StatusInternalServerError, "some alerts failed to publish", nil)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("All alerts published successfully"))
-
-	l.Trace().Int("count", len(publishReqs)).Msg("PublishAlertBatch request handled successfully")
+	response.SuccessResponse(w, nil)
 }

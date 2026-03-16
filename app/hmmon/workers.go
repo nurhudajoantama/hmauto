@@ -78,7 +78,7 @@ func (w *HmmonWorker) internetWorkerSwitchModem(ctx context.Context) error {
 		if !pingCheckModemOk {
 			log.Print("modem connection is down")
 			if err := w.hmalertService.PublishAlert(ctx, hmalert.PublishAlertBody{
-				Tipe:    DISCORD_TIPE,
+				Type:    DISCORD_TIPE,
 				Level:   hmalert.LEVEL_WARNING,
 				Message: fmt.Sprintf("Fail Ping %s, Modem connection is down ❌, cannot restart modem 🔄", w.intercheckCfg.ModemAddress),
 			}); err != nil {
@@ -90,7 +90,7 @@ func (w *HmmonWorker) internetWorkerSwitchModem(ctx context.Context) error {
 		pingCheckNetOk := pingInternet(w.intercheckCfg.CheckAddress)
 		if pingCheckNetOk {
 			if err := w.hmalertService.PublishAlert(ctx, hmalert.PublishAlertBody{
-				Tipe:    DISCORD_TIPE,
+				Type:    DISCORD_TIPE,
 				Level:   hmalert.LEVEL_INFO,
 				Message: fmt.Sprintf("Ping %s success, Internet connection is up ✅", w.intercheckCfg.CheckAddress),
 			}); err != nil {
@@ -100,7 +100,7 @@ func (w *HmmonWorker) internetWorkerSwitchModem(ctx context.Context) error {
 			return nil
 		}
 		if err := w.hmalertService.PublishAlert(ctx, hmalert.PublishAlertBody{
-			Tipe:    DISCORD_TIPE,
+			Type:    DISCORD_TIPE,
 			Level:   hmalert.LEVEL_INFO,
 			Message: fmt.Sprintf("Ping %s failed, Internet connection is down ❌, restarting modem 🔄", w.intercheckCfg.CheckAddress),
 		}); err != nil {

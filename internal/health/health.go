@@ -90,7 +90,7 @@ func (hc *HealthChecker) Check(ctx context.Context) HealthStatus {
 	return status
 }
 
-// Handler returns an HTTP handler for health checks.
+// Handler returns an HTTP handler for the full dependency health check.
 func (hc *HealthChecker) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := hlog.FromRequest(r)
@@ -117,20 +117,21 @@ func (hc *HealthChecker) ReadinessHandler() http.HandlerFunc {
 		ctx := r.Context()
 		status := hc.Check(ctx)
 
+		w.Header().Set("Content-Type", "application/json")
 		if status.Status == "healthy" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("ready"))
 		} else {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("not ready"))
 		}
+		json.NewEncoder(w).Encode(map[string]string{"status": status.Status})
 	}
 }
 
 // LivenessHandler returns a liveness probe handler.
 func LivenessHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("alive"))
+		json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 	}
 }
