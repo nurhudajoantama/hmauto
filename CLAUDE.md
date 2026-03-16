@@ -1,23 +1,19 @@
 # hmauto — Claude Code Context
 
-Home automation backend in Go. IoT state management + alerting + internet monitoring.
+Home automation backend in Go. IoT state management via Redis + RabbitMQ event bus.
 
 ## Package map
 
 | Package | Role |
 |---|---|
-| `app/hmstt` | State store (type+key → value). Redis Hash per type. |
-| `app/hmalert` | Alert pipeline: publish → RabbitMQ → consume → Discord webhook |
+| `app/hmstt` | State store (type+key → value). Redis Hash per type. Publishes state changes to RabbitMQ. |
 | `app/hmapikey` | Admin API for API key create/revoke/list |
-| `app/hmmon` | Background worker: internet ping, modem restart via switch state |
 | `app/server` | gorilla/mux HTTP server, middleware wiring |
-| `app/worker` | errgroup wrapper for background goroutines |
 | `internal/apikey` | Redis-backed API key store (create/validate/revoke/list) |
 | `internal/redis` | Redis client init and close |
 | `internal/middleware` | Auth (API key + admin), rate limit, security headers, Prometheus, trace ID |
 | `internal/instrumentation` | zerolog + OpenTelemetry (OTLP) |
 | `internal/rabbitmq` | RabbitMQ AMQP connection |
-| `internal/discord` | Discord webhook client for alert delivery |
 | `internal/health` | Health check handlers (Redis + RabbitMQ) |
 | `internal/response` | JSON response envelope helpers |
 
@@ -39,18 +35,18 @@ Home automation backend in Go. IoT state management + alerting + internet monito
 - `internal/config/types.go` — all config structs
 - `conf.example.yaml` — update whenever config structs change
 - `app/hmstt/store.go` — Redis state store
+- `app/hmstt/event.go` — RabbitMQ topic publisher for state changes
 - `app/hmstt/util.go` — type/value validation (`canTypeChangedWithKey`)
 - `internal/apikey/store.go` — API key CRUD + `ErrKeyNotFound` sentinel
 - `internal/middleware/auth.go` — `APIKeyAuth` (Redis) + `AdminKeyAuth` (config)
-- `docs/` — architecture, API design, Redis schema, observability
 
 ## Dependency overview
 
 ```
-Redis (state + apikeys)   RabbitMQ (event bus)   Discord (alerts)
+Redis (state + apikeys)   RabbitMQ (amq.topic event bus)
       ↕                         ↕
-   hmstt ←──event──→ hmalert ←── hmmon
-      ↕                ↕
+   hmstt ──────state change event──────→ (external subscribers)
+      ↕
    HTTP server (gorilla/mux + middleware chain)
          ↕
    /admin/* (hmapikey)

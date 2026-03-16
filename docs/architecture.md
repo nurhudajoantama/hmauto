@@ -7,7 +7,6 @@
 | HTTP server | gorilla/mux |
 | Storage | Redis (persistent, AOF) — `go-redis/v9` |
 | Message broker | RabbitMQ (AMQP) — `amqp091-go` |
-| Alert delivery | Discord webhooks |
 | Logging | zerolog (structured JSON) |
 | Tracing | OpenTelemetry (OTLP/gRPC) |
 | Metrics | Prometheus (`/metrics`) |
@@ -32,7 +31,7 @@
 [otelhttp.NewHandler wraps router — spans created here]
 [sentryhttp wraps otelhttp — panics captured here]
 
-[/hmstt/* and /hmalert/* subrouter]
+[/v1/states/* subrouter]
   + APIKeyAuth             — Bearer token → Redis GET apikey:{key}
 
 [/admin/* subrouter]
@@ -44,32 +43,21 @@
 ```
 Public (no auth):
   GET  /healthz            → 200 "OK"
-  GET  /hello              → 200 "Hello, World!"
   GET  /health             → JSON {status, dependencies: {redis, rabbitmq}}
   GET  /ready              → 200/503 readiness probe
   GET  /live               → 200 liveness probe
   GET  /metrics            → Prometheus scrape endpoint
 
 Protected (API key from Redis):
-  POST /hmalert/publish         → enqueue alert to RabbitMQ
-  POST /hmalert/publishbatch    → enqueue batch of alerts
-  GET  /hmstt/states            → all states (all types)
-  GET  /hmstt/states/{type}     → all states for one type
-  GET  /hmstt/state/{type}/{key} → single state entry
-  POST /hmstt/state/{type}/{key} → set state value
+  GET  /v1/states                → all states (all types)
+  GET  /v1/states/{type}         → all states for one type
+  GET  /v1/states/{type}/{key}   → single state entry
+  PUT  /v1/states/{type}/{key}   → set state value
 
 Admin (master key from config):
   GET    /admin/apikeys          → list keys (key_hint + metadata)
   POST   /admin/apikeys          → create key (full key returned once)
   DELETE /admin/apikeys/{key}    → revoke key (404 if not found)
-```
-
-## Background workers
-
-```
-errgroup (context-cancelled on SIGTERM/SIGINT):
-  hmmon.internetWorker     — tick, ping internet, trigger modem restart via hmstt
-  hmalert.consumerWorker   — consume RabbitMQ queue → Discord webhook
 ```
 
 ## Redis key schema
@@ -92,6 +80,10 @@ API keys:
   Members  : all active key values
 ```
 
+## RabbitMQ events
+
+State changes are published to the `amq.topic` exchange with routing key `hmstt_channel.{full_key}` (e.g. `hmstt_channel.hmstt.switch.modem`). Payload is plain text (the new value). External subscribers can bind queues to this exchange.
+
 ## Module wiring (main.go)
 
 ```
@@ -102,15 +94,12 @@ instrumentation.SetupOTelSDK (OTEL)
   ↓
 redis.NewClient        ← state + apikey storage
 rabbitmq.NewRabbitMQConn
-discord.NewDiscordWebhook x3
 apikey.NewRedisStore(rdb)
   ↓
 server.NewWithConfig   ← middleware chain assembled here
 health.NewHealthChecker(rdb, mq) → /health, /ready, /live
   ↓
-hmalert: NewEvent + NewService + RegisterHandler + RegisterWorkers
 hmstt:   NewStore(rdb) + NewEvent + NewService + RegisterHandlers
-hmmon:   RegisterWorkers
 hmapikey: NewService + RegisterHandlers  ← admin routes
   ↓
 errgrp.Wait → graceful shutdown (5s timeout)

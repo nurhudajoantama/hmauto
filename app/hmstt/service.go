@@ -3,10 +3,7 @@ package hmstt
 import (
 	"context"
 	"errors"
-	"fmt"
-	"time"
 
-	"github.com/nurhudajoantama/hmauto/app/hmalert"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
@@ -23,15 +20,12 @@ var hmsttStateChangesTotal = promauto.NewCounterVec(
 type HmsttService struct {
 	store StateStore
 	event *HmsttEvent
-
-	hmalertService *hmalert.HmalerService
 }
 
-func NewService(hmsttStore StateStore, hmsttEvent *HmsttEvent, hmalertService *hmalert.HmalerService) *HmsttService {
+func NewService(hmsttStore StateStore, hmsttEvent *HmsttEvent) *HmsttService {
 	return &HmsttService{
-		store:          hmsttStore,
-		event:          hmsttEvent,
-		hmalertService: hmalertService,
+		store: hmsttStore,
+		event: hmsttEvent,
 	}
 }
 
@@ -91,38 +85,5 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 		l.Error().Err(err).Msg("StateChange event failed")
 	}
 
-	alertCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := s.hmalertService.PublishAlert(alertCtx, hmalert.PublishAlertBody{
-		Type:    "Hmstate Change",
-		Level:   hmalert.LEVEL_INFO,
-		Message: fmt.Sprintf("State %s.%s changed to %s", tipe, key, value),
-	}); err != nil {
-		l.Error().Err(err).Msg("failed to publish hmstt state-change alert")
-	}
-
 	return nil
-}
-
-func (s *HmsttService) RestartSwitchByKey(ctx context.Context, key string) (err error) {
-	l := zerolog.Ctx(ctx)
-	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
-		return c.Str("hmstt_key", key)
-	})
-	l.Info().Msg("Handling RestartSwitchByKey service")
-
-	err = s.SetState(ctx, PREFIX_SWITCH, key, STATE_OFF)
-	if err != nil {
-		l.Error().Err(err).Msg("SetState to OFF failed in RestartSwitchByKey")
-		return
-	}
-
-	time.Sleep(500 * time.Millisecond)
-	err = s.SetState(ctx, PREFIX_SWITCH, key, STATE_ON)
-	if err != nil {
-		l.Error().Err(err).Msg("SetState to ON failed in RestartSwitchByKey")
-		return
-	}
-	return
 }

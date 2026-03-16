@@ -2,7 +2,7 @@
 //
 //	@title			hmauto API
 //	@version		1.0
-//	@description	Home automation backend API for IoT state management, alerting, and internet monitoring.
+//	@description	Home automation backend API for IoT state management.
 //
 //	@host		localhost:8080
 //	@BasePath	/v1
@@ -21,22 +21,17 @@ package main
 
 import (
 	"context"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/nurhudajoantama/hmauto/app/hmalert"
 	"github.com/nurhudajoantama/hmauto/app/hmapikey"
-	"github.com/nurhudajoantama/hmauto/app/hmmon"
 	"github.com/nurhudajoantama/hmauto/app/hmstt"
 	"github.com/nurhudajoantama/hmauto/app/server"
-	"github.com/nurhudajoantama/hmauto/app/worker"
 	"github.com/nurhudajoantama/hmauto/internal/apikey"
 	"github.com/nurhudajoantama/hmauto/internal/config"
-	"github.com/nurhudajoantama/hmauto/internal/discord"
 	_ "github.com/nurhudajoantama/hmauto/docs"
 	"github.com/nurhudajoantama/hmauto/internal/health"
 	"github.com/nurhudajoantama/hmauto/internal/instrumentation"
@@ -87,38 +82,17 @@ func main() {
 	// Initialize RabbitMQ
 	rabbitMQConn := rabbitmq.NewRabbitMQConn(cfg.MQTT)
 
-	httpClient := http.DefaultClient
-
-	// Initialize Discord webhooks
-	discordWebhookInfo := discord.NewDiscordWebhook(httpClient, cfg.DiscordWebhookInfo)
-	discordWebhookWarning := discord.NewDiscordWebhook(httpClient, cfg.DiscordWebhookWarning)
-	discordWebhookError := discord.NewDiscordWebhook(httpClient, cfg.DiscordWebhookError)
-
-	// Set default values
-	maxRequestSize := cfg.Security.MaxRequestSize
-	if maxRequestSize == 0 {
-		maxRequestSize = 1024 * 1024
-	}
-	rateLimitPerMin := cfg.Security.RateLimitPerMin
-	if rateLimitPerMin == 0 {
-		rateLimitPerMin = 60
-	}
-	rateLimitBurst := cfg.Security.RateLimitBurst
-	if rateLimitBurst == 0 {
-		rateLimitBurst = 10
-	}
-
-	rateLimiter := middleware.NewRateLimiter(rateLimitPerMin, time.Minute, rateLimitBurst)
+	rateLimiter := middleware.NewRateLimiter(cfg.Security.GetRateLimitPerMin(), time.Minute, cfg.Security.GetRateLimitBurst())
 
 	// API key store (Redis-backed)
-	keyStore := apikey.NewRedisStore(rdb)
+	keyStore := apikey.NewRedisStore(rdb, cfg.GetRedisKeyPrefix())
 
 	// Initialize server
 	serverConfig := &server.ServerConfig{
 		KeyStore:       keyStore,
 		AdminKey:       cfg.Security.AdminKey,
 		EnableAuth:     cfg.Security.EnableAuth,
-		MaxRequestSize: maxRequestSize,
+		MaxRequestSize: cfg.Security.GetMaxRequestSize(),
 		RateLimiter:    rateLimiter,
 	}
 	srv := server.NewWithConfig(cfg.HTTP.Addr(), serverConfig)
@@ -131,31 +105,17 @@ func main() {
 	r.HandleFunc("/ready", healthChecker.ReadinessHandler()).Methods("GET")
 	r.HandleFunc("/live", health.LivenessHandler()).Methods("GET")
 
-	// Initialize worker
-	errgrp, ctx := errgroup.WithContext(ctx)
-	w := worker.New(errgrp, ctx)
-
-	// HMALERT
-	hmalertProducerEvent := hmalert.NewEvent(rabbitMQConn)
-	hmalertService := hmalert.NewService(discordWebhookInfo, discordWebhookWarning, discordWebhookError, hmalertProducerEvent)
-	hmalert.RegisterHandler(srv, hmalertService)
-
-	hmalertConsumerEvent := hmalert.NewEvent(rabbitMQConn)
-	hmalert.RegisterWorkers(w, hmalertConsumerEvent, hmalertService)
-
 	// HMSTT
-	hmsttStore := hmstt.NewStore(rdb)
+	hmsttStore := hmstt.NewStore(rdb, cfg.GetRedisKeyPrefix())
 	hmsttEvent := hmstt.NewEvent(rabbitMQConn)
-	hmsttService := hmstt.NewService(hmsttStore, hmsttEvent, hmalertService)
+	hmsttService := hmstt.NewService(hmsttStore, hmsttEvent)
 	hmstt.RegisterHandlers(srv, hmsttService)
-
-	// HMMON
-	hmmon.RegisterWorkers(w, hmsttService, hmalertService, cfg.InternetCheck)
 
 	// Admin API key management
 	apikeyService := hmapikey.NewService(keyStore)
 	hmapikey.RegisterHandlers(srv, apikeyService)
 
+	errgrp, ctx := errgroup.WithContext(ctx)
 	errgrp.Go(func() error {
 		return srv.Start(ctx)
 	})

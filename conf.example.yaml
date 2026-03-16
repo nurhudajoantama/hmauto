@@ -1,6 +1,10 @@
 # Example configuration file for hmauto
 # Copy this to conf/conf.yaml and update with your values
 
+# Redis key prefix — all keys are namespaced as {prefix}:{key}
+# Useful when sharing a Redis instance across services (e.g. set to the service name)
+redisKeyPrefix: "hmauto"
+
 http:
   host: "0.0.0.0"
   port: "8080"
@@ -22,12 +26,6 @@ mqtt:
   password: "your_mqtt_password"
   host: "localhost"
   port: "5672"
-
-internetCheck:
-  checkAddress: "https://www.google.com"
-  modemAddress: "http://192.168.1.1"
-  interval: "30s"
-  switchKey: "modem_switch"
 
 # Security configuration
 security:
@@ -58,13 +56,3 @@ sentry:
   dsn: ""  # e.g. "https://xxx@sentry.io/yyy"
   environment: "production"
   sampleRate: 0.1
-
-# Discord webhook URLs for alerts
-discordWebhookError:
-  url: "https://discord.com/api/webhooks/your/error/webhook"
-
-discordWebhookWarning:
-  url: "https://discord.com/api/webhooks/your/warning/webhook"
-
-discordWebhookInfo:
-  url: "https://discord.com/api/webhooks/your/info/webhook"

@@ -38,15 +38,20 @@ type Store interface {
 
 // RedisStore implements Store using Redis.
 type RedisStore struct {
-	rdb *redis.Client
+	rdb    *redis.Client
+	prefix string
 }
 
-func NewRedisStore(rdb *redis.Client) *RedisStore {
-	return &RedisStore{rdb: rdb}
+func NewRedisStore(rdb *redis.Client, prefix string) *RedisStore {
+	return &RedisStore{rdb: rdb, prefix: prefix}
 }
 
-func redisKey(key string) string {
-	return "apikey:" + key
+func (s *RedisStore) redisKey(key string) string {
+	return s.prefix + ":apikey:" + key
+}
+
+func (s *RedisStore) indexKey() string {
+	return s.prefix + ":apikeys:index"
 }
 
 func keyHint(key string) string {
@@ -73,8 +78,8 @@ func (s *RedisStore) CreateKey(ctx context.Context, label string) (string, error
 	}
 
 	pipe := s.rdb.Pipeline()
-	pipe.Set(ctx, redisKey(key), data, 0)
-	pipe.SAdd(ctx, "apikeys:index", key)
+	pipe.Set(ctx, s.redisKey(key), data, 0)
+	pipe.SAdd(ctx, s.indexKey(), key)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return "", fmt.Errorf("redis pipeline: %w", err)
 	}
@@ -83,7 +88,7 @@ func (s *RedisStore) CreateKey(ctx context.Context, label string) (string, error
 }
 
 func (s *RedisStore) ValidateKey(ctx context.Context, key string) (bool, error) {
-	data, err := s.rdb.Get(ctx, redisKey(key)).Bytes()
+	data, err := s.rdb.Get(ctx, s.redisKey(key)).Bytes()
 	if err == redis.Nil {
 		return false, nil
 	}
@@ -104,35 +109,35 @@ func (s *RedisStore) ValidateKey(ctx context.Context, key string) (bool, error) 
 		}
 		// Use a background context since the request context may be cancelled.
 		bgCtx := context.Background()
-		s.rdb.Set(bgCtx, redisKey(key), updated, 0) //nolint:errcheck
+		s.rdb.Set(bgCtx, s.redisKey(key), updated, 0) //nolint:errcheck
 	}()
 
 	return true, nil
 }
 
 func (s *RedisStore) RevokeKey(ctx context.Context, key string) error {
-	n, err := s.rdb.Del(ctx, redisKey(key)).Result()
+	n, err := s.rdb.Del(ctx, s.redisKey(key)).Result()
 	if err != nil {
 		return fmt.Errorf("redis DEL: %w", err)
 	}
 	if n == 0 {
 		return ErrKeyNotFound
 	}
-	if err := s.rdb.SRem(ctx, "apikeys:index", key).Err(); err != nil {
+	if err := s.rdb.SRem(ctx, s.indexKey(), key).Err(); err != nil {
 		return fmt.Errorf("redis SREM: %w", err)
 	}
 	return nil
 }
 
 func (s *RedisStore) ListKeys(ctx context.Context) ([]KeyMetadata, error) {
-	members, err := s.rdb.SMembers(ctx, "apikeys:index").Result()
+	members, err := s.rdb.SMembers(ctx, s.indexKey()).Result()
 	if err != nil {
 		return nil, fmt.Errorf("redis SMEMBERS: %w", err)
 	}
 
 	result := make([]KeyMetadata, 0, len(members))
 	for _, member := range members {
-		data, err := s.rdb.Get(ctx, redisKey(member)).Bytes()
+		data, err := s.rdb.Get(ctx, s.redisKey(member)).Bytes()
 		if err == redis.Nil {
 			// Key was revoked but index not cleaned up — skip.
 			continue

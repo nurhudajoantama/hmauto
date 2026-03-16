@@ -42,27 +42,33 @@ func (m MQTT) BrokerURL() string {
 	return fmt.Sprintf("amqp://%s:%s@%s:%s/", m.User, m.Password, m.Host, m.Port)
 }
 
-type InternetCheck struct {
-	CheckAddress string `yaml:"checkAddress"`
-	ModemAddress string `yaml:"modemAddress"`
-	Interval     string `yaml:"interval"`
-	SwitchKey    string `yaml:"switchKey"`
-}
-
-type DiscordWebhook struct {
-	URL string `yaml:"url"`
-}
-
-func (d DiscordWebhook) WebhookUrl() string {
-	return d.URL
-}
-
 type Security struct {
 	AdminKey        string `yaml:"adminKey"`
 	EnableAuth      bool   `yaml:"enableAuth"`
 	MaxRequestSize  int64  `yaml:"maxRequestSize"`  // in bytes
 	RateLimitPerMin int    `yaml:"rateLimitPerMin"` // requests per minute
 	RateLimitBurst  int    `yaml:"rateLimitBurst"`  // max burst size
+}
+
+func (s Security) GetMaxRequestSize() int64 {
+	if s.MaxRequestSize == 0 {
+		return 1024 * 1024 // 1MB
+	}
+	return s.MaxRequestSize
+}
+
+func (s Security) GetRateLimitPerMin() int {
+	if s.RateLimitPerMin == 0 {
+		return 60
+	}
+	return s.RateLimitPerMin
+}
+
+func (s Security) GetRateLimitBurst() int {
+	if s.RateLimitBurst == 0 {
+		return 10
+	}
+	return s.RateLimitBurst
 }
 
 type Sentry struct {
@@ -78,16 +84,19 @@ type OTel struct {
 }
 
 type Config struct {
-	HTTP          TCPServer     `yaml:"http"`
-	Log           Logging       `yaml:"log"`
-	Redis         Redis         `yaml:"redis"`
-	MQTT          MQTT          `yaml:"mqtt"`
-	InternetCheck InternetCheck `yaml:"internetCheck"`
-	Security      Security      `yaml:"security"`
-	Sentry        Sentry        `yaml:"sentry"`
-	OTel          OTel          `yaml:"otel"`
+	HTTP           TCPServer `yaml:"http"`
+	Log            Logging   `yaml:"log"`
+	Redis          Redis     `yaml:"redis"`
+	MQTT           MQTT      `yaml:"mqtt"`
+	Security       Security  `yaml:"security"`
+	Sentry         Sentry    `yaml:"sentry"`
+	OTel           OTel      `yaml:"otel"`
+	RedisKeyPrefix string    `yaml:"redisKeyPrefix"`
+}
 
-	DiscordWebhookError   DiscordWebhook `yaml:"discordWebhookError"`
-	DiscordWebhookWarning DiscordWebhook `yaml:"discordWebhookWarning"`
-	DiscordWebhookInfo    DiscordWebhook `yaml:"discordWebhookInfo"`
+func (c Config) GetRedisKeyPrefix() string {
+	if c.RedisKeyPrefix == "" {
+		return "hmauto"
+	}
+	return c.RedisKeyPrefix
 }

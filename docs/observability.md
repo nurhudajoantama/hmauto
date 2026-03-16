@@ -7,7 +7,7 @@
 - Logger attached to every request context via `hlog.NewHandler`
 - Access log: method, url, status, size, duration — via `hlog.AccessHandler`
 - Fields always present: `request_id`, `ip`, `user_agent`
-- Domain fields added per handler: `hmstt_type`, `hmstt_key`, `alert_level`, etc.
+- Domain fields added per handler: `hmstt_type`, `hmstt_key`, etc.
 - Always use `zerolog.Ctx(ctx)` — never `log.Print` in app code
 
 Config:
@@ -49,7 +49,6 @@ http_request_duration_seconds{method, path}     histogram (default buckets)
 
 ```
 hmstt_state_changes_total{type}                 counter  (app/hmstt/service.go)
-hmalert_published_total{level}                  counter  (app/hmalert/service.go)
 ```
 
 ### Recommended Grafana dashboard queries

@@ -31,15 +31,24 @@ type stateEntryJSON struct {
 }
 
 type HmsttStore struct {
-	rdb *redis.Client
+	rdb    *redis.Client
+	prefix string
 }
 
-func NewStore(rdb *redis.Client) *HmsttStore {
-	return &HmsttStore{rdb: rdb}
+func NewStore(rdb *redis.Client, prefix string) *HmsttStore {
+	return &HmsttStore{rdb: rdb, prefix: prefix}
 }
 
-func redisKey(tipe string) string {
-	return "hmstt:" + tipe
+func (s *HmsttStore) redisKey(tipe string) string {
+	return s.prefix + ":hmstt:" + tipe
+}
+
+func (s *HmsttStore) redisKeyPattern() string {
+	return s.prefix + ":hmstt:*"
+}
+
+func (s *HmsttStore) trimKeyPrefix(key string) string {
+	return strings.TrimPrefix(key, s.prefix+":hmstt:")
 }
 
 func (s *HmsttStore) SetState(ctx context.Context, tipe, k, value string) error {
@@ -54,7 +63,7 @@ func (s *HmsttStore) SetState(ctx context.Context, tipe, k, value string) error 
 	if err != nil {
 		return fmt.Errorf("marshal state entry: %w", err)
 	}
-	if err := s.rdb.HSet(ctx, redisKey(tipe), k, data).Err(); err != nil {
+	if err := s.rdb.HSet(ctx, s.redisKey(tipe), k, data).Err(); err != nil {
 		return fmt.Errorf("redis HSET: %w", err)
 	}
 	return nil
@@ -64,7 +73,7 @@ func (s *HmsttStore) GetState(ctx context.Context, tipe, k string) (StateEntry, 
 	ctx, span := otel.Tracer("hmstt").Start(ctx, "store.GetState")
 	defer span.End()
 
-	data, err := s.rdb.HGet(ctx, redisKey(tipe), k).Bytes()
+	data, err := s.rdb.HGet(ctx, s.redisKey(tipe), k).Bytes()
 	if err != nil {
 		return StateEntry{}, fmt.Errorf("redis HGET: %w", err)
 	}
@@ -79,7 +88,7 @@ func (s *HmsttStore) GetAllByType(ctx context.Context, tipe string) ([]StateEntr
 	ctx, span := otel.Tracer("hmstt").Start(ctx, "store.GetAllByType")
 	defer span.End()
 
-	result, err := s.rdb.HGetAll(ctx, redisKey(tipe)).Result()
+	result, err := s.rdb.HGetAll(ctx, s.redisKey(tipe)).Result()
 	if err != nil {
 		return nil, fmt.Errorf("redis HGETALL: %w", err)
 	}
@@ -98,13 +107,13 @@ func (s *HmsttStore) GetAll(ctx context.Context) ([]StateEntry, error) {
 	ctx, span := otel.Tracer("hmstt").Start(ctx, "store.GetAll")
 	defer span.End()
 
-	keys, err := s.rdb.Keys(ctx, "hmstt:*").Result()
+	keys, err := s.rdb.Keys(ctx, s.redisKeyPattern()).Result()
 	if err != nil {
 		return nil, fmt.Errorf("redis KEYS: %w", err)
 	}
 	var all []StateEntry
 	for _, key := range keys {
-		tipe := strings.TrimPrefix(key, "hmstt:")
+		tipe := s.trimKeyPrefix(key)
 		entries, err := s.GetAllByType(ctx, tipe)
 		if err != nil {
 			return nil, err
