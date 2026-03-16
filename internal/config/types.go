@@ -20,33 +20,15 @@ type Logging struct {
 	LogFilePath    string `yaml:"logFilePath"`
 }
 
-type SQL struct {
-	User        string `yaml:"user"`
-	Password    string `yaml:"password"`
-	Host        string `yaml:"host"`
-	Name        string `yaml:"name"`
-	Port        string `yaml:"port"`
-	MaxIdleConn int    `yaml:"maxIdleConn"`
-	MaxOpenConn int    `yaml:"maxOpenConn"`
-	SSLMode     string `yaml:"sslMode"` // disable, require, verify-ca, verify-full
+type Redis struct {
+	Host     string `yaml:"host"`
+	Port     string `yaml:"port"`
+	Password string `yaml:"password"`
+	DB       int    `yaml:"db"`
 }
 
-func (s SQL) DatabaseUrl() string {
-	sslMode := s.SSLMode
-	if sslMode == "" {
-		sslMode = "require" // Default to require for security
-	}
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		s.User, s.Password, s.Host, s.Port, s.Name, sslMode)
-}
-
-func (s SQL) DataSourceName() string {
-	sslMode := s.SSLMode
-	if sslMode == "" {
-		sslMode = "require" // Default to require for security
-	}
-	return fmt.Sprintf("user=%s password=%s host=%s port=%s dbname=%s sslmode=%s",
-		s.User, s.Password, s.Host, s.Port, s.Name, sslMode)
+func (r Redis) Addr() string {
+	return fmt.Sprintf("%s:%s", r.Host, r.Port)
 }
 
 type MQTT struct {
@@ -76,20 +58,34 @@ func (d DiscordWebhook) WebhookUrl() string {
 }
 
 type Security struct {
-	APIKeys          []string `yaml:"apiKeys"`
-	EnableAuth       bool     `yaml:"enableAuth"`
-	MaxRequestSize   int64    `yaml:"maxRequestSize"`   // in bytes
-	RateLimitPerMin  int      `yaml:"rateLimitPerMin"`  // requests per minute
-	RateLimitBurst   int      `yaml:"rateLimitBurst"`   // max burst size
+	AdminKey        string `yaml:"adminKey"`
+	EnableAuth      bool   `yaml:"enableAuth"`
+	MaxRequestSize  int64  `yaml:"maxRequestSize"`  // in bytes
+	RateLimitPerMin int    `yaml:"rateLimitPerMin"` // requests per minute
+	RateLimitBurst  int    `yaml:"rateLimitBurst"`  // max burst size
+}
+
+type Sentry struct {
+	DSN         string  `yaml:"dsn"`
+	Environment string  `yaml:"environment"`
+	SampleRate  float64 `yaml:"sampleRate"`
+}
+
+type OTel struct {
+	Endpoint    string `yaml:"endpoint"`
+	ServiceName string `yaml:"serviceName"`
+	Enabled     bool   `yaml:"enabled"`
 }
 
 type Config struct {
 	HTTP          TCPServer     `yaml:"http"`
 	Log           Logging       `yaml:"log"`
-	DB            SQL           `yaml:"db"`
+	Redis         Redis         `yaml:"redis"`
 	MQTT          MQTT          `yaml:"mqtt"`
 	InternetCheck InternetCheck `yaml:"internetCheck"`
 	Security      Security      `yaml:"security"`
+	Sentry        Sentry        `yaml:"sentry"`
+	OTel          OTel          `yaml:"otel"`
 
 	DiscordWebhookError   DiscordWebhook `yaml:"discordWebhookError"`
 	DiscordWebhookWarning DiscordWebhook `yaml:"discordWebhookWarning"`

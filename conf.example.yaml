@@ -7,19 +7,15 @@ http:
 
 log:
   level: "info"  # debug, info, warn, error
-  type: "console"  # console, json
+  type: "json"   # console, json
   logFileEnabled: false
   logFilePath: "logs/app.log"
 
-db:
-  user: "your_db_user"
-  password: "your_db_password"
+redis:
   host: "localhost"
-  port: "5432"
-  name: "your_db_name"
-  maxIdleConn: 10
-  maxOpenConn: 100
-  sslMode: "require"  # disable, require, verify-ca, verify-full (use 'require' or higher for production)
+  port: "6379"
+  password: ""
+  db: 0
 
 mqtt:
   user: "your_mqtt_user"
@@ -35,23 +31,33 @@ internetCheck:
 
 # Security configuration
 security:
+  # Master admin key for /admin/* endpoints (config only, never stored in Redis)
+  # Generate: openssl rand -hex 32
+  adminKey: "your-admin-key-here-change-this-in-production"
+
   # Enable API key authentication (recommended for production)
   enableAuth: true
-  
-  # List of valid API keys
-  # Generate strong random keys: openssl rand -hex 32
-  apiKeys:
-    - "your-api-key-here-change-this-in-production"
-    - "another-api-key-for-different-client"
-  
+
   # Maximum request body size in bytes (1MB = 1048576)
   maxRequestSize: 1048576
-  
+
   # Rate limiting: requests per minute
   rateLimitPerMin: 60
-  
+
   # Rate limiting: maximum burst size
   rateLimitBurst: 10
+
+# OpenTelemetry configuration
+otel:
+  endpoint: "localhost:4317"  # OTLP gRPC endpoint
+  serviceName: "hmauto"
+  enabled: true
+
+# Sentry error tracking
+sentry:
+  dsn: ""  # e.g. "https://xxx@sentry.io/yyy"
+  environment: "production"
+  sampleRate: 0.1
 
 # Discord webhook URLs for alerts
 discordWebhookError:

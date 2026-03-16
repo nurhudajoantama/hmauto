@@ -8,17 +8,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/nurhudajoantama/hmauto/app/hmalert"
+	"github.com/nurhudajoantama/hmauto/app/hmapikey"
 	"github.com/nurhudajoantama/hmauto/app/hmmon"
 	"github.com/nurhudajoantama/hmauto/app/hmstt"
 	"github.com/nurhudajoantama/hmauto/app/server"
 	"github.com/nurhudajoantama/hmauto/app/worker"
+	"github.com/nurhudajoantama/hmauto/internal/apikey"
 	"github.com/nurhudajoantama/hmauto/internal/config"
 	"github.com/nurhudajoantama/hmauto/internal/discord"
 	"github.com/nurhudajoantama/hmauto/internal/health"
 	"github.com/nurhudajoantama/hmauto/internal/instrumentation"
 	"github.com/nurhudajoantama/hmauto/internal/middleware"
-	"github.com/nurhudajoantama/hmauto/internal/postgres"
+	internalredis "github.com/nurhudajoantama/hmauto/internal/redis"
 	"github.com/nurhudajoantama/hmauto/internal/rabbitmq"
 	"golang.org/x/sync/errgroup"
 
@@ -26,8 +29,6 @@ import (
 )
 
 func main() {
-	// initialize config
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -35,79 +36,85 @@ func main() {
 	if configPath == "" {
 		configPath = "conf/conf.yaml"
 	}
-	config, err := config.InitializeConfig(configPath)
+	cfg, err := config.InitializeConfig(configPath)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load config")
 	}
 
-	// initialize logger
-	cleanupLog := instrumentation.InitializeLogger(config.Log)
+	// Initialize Sentry (before everything else)
+	if cfg.Sentry.DSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              cfg.Sentry.DSN,
+			Environment:      cfg.Sentry.Environment,
+			TracesSampleRate: cfg.Sentry.SampleRate,
+		}); err != nil {
+			log.Fatal().Err(err).Msg("failed to initialize Sentry")
+		}
+	}
 
-	// initialize otel
-	otelShutdown, err := instrumentation.SetupOTelSDK(ctx)
+	// Initialize logger
+	cleanupLog := instrumentation.InitializeLogger(cfg.Log)
+
+	// Initialize OTEL
+	otelShutdown, err := instrumentation.SetupOTelSDK(ctx, cfg.OTel)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize OpenTelemetry")
 	}
 
-	// initialize postgres
-	gormPostgres := postgres.NewGorm(config.DB)
+	// Initialize Redis
+	rdb := internalredis.NewClient(cfg.Redis)
 
-	// initialize rabbitmq
-	rabbitMQConn := rabbitmq.NewRabbitMQConn(config.MQTT)
+	// Initialize RabbitMQ
+	rabbitMQConn := rabbitmq.NewRabbitMQConn(cfg.MQTT)
 
 	httpClient := http.DefaultClient
 
-	// init discord
-	discordWebhookInfo := discord.NewDiscordWebhook(httpClient, config.DiscordWebhookInfo)
-	discordWebhookWarning := discord.NewDiscordWebhook(httpClient, config.DiscordWebhookWarning)
-	discordWebhookError := discord.NewDiscordWebhook(httpClient, config.DiscordWebhookError)
+	// Initialize Discord webhooks
+	discordWebhookInfo := discord.NewDiscordWebhook(httpClient, cfg.DiscordWebhookInfo)
+	discordWebhookWarning := discord.NewDiscordWebhook(httpClient, cfg.DiscordWebhookWarning)
+	discordWebhookError := discord.NewDiscordWebhook(httpClient, cfg.DiscordWebhookError)
 
-	// prepare security configuration
-	apiKeyMap := make(map[string]bool)
-	for _, key := range config.Security.APIKeys {
-		apiKeyMap[key] = true
-	}
-
-	// Set default values if not configured
-	maxRequestSize := config.Security.MaxRequestSize
+	// Set default values
+	maxRequestSize := cfg.Security.MaxRequestSize
 	if maxRequestSize == 0 {
-		maxRequestSize = 1024 * 1024 // 1MB default
+		maxRequestSize = 1024 * 1024
 	}
-
-	rateLimitPerMin := config.Security.RateLimitPerMin
+	rateLimitPerMin := cfg.Security.RateLimitPerMin
 	if rateLimitPerMin == 0 {
-		rateLimitPerMin = 60 // 60 requests per minute default
+		rateLimitPerMin = 60
 	}
-
-	rateLimitBurst := config.Security.RateLimitBurst
+	rateLimitBurst := cfg.Security.RateLimitBurst
 	if rateLimitBurst == 0 {
-		rateLimitBurst = 10 // 10 burst default
+		rateLimitBurst = 10
 	}
 
-	// Create rate limiter
 	rateLimiter := middleware.NewRateLimiter(rateLimitPerMin, time.Minute, rateLimitBurst)
 
-	// initialize server with security config
+	// API key store (Redis-backed)
+	keyStore := apikey.NewRedisStore(rdb)
+
+	// Initialize server
 	serverConfig := &server.ServerConfig{
-		APIKeys:        apiKeyMap,
-		EnableAuth:     config.Security.EnableAuth,
+		KeyStore:       keyStore,
+		AdminKey:       cfg.Security.AdminKey,
+		EnableAuth:     cfg.Security.EnableAuth,
 		MaxRequestSize: maxRequestSize,
 		RateLimiter:    rateLimiter,
 	}
-	srv := server.NewWithConfig(config.HTTP.Addr(), serverConfig)
+	srv := server.NewWithConfig(cfg.HTTP.Addr(), serverConfig)
 
 	// Setup health checks
-	healthChecker := health.NewHealthChecker(gormPostgres, rabbitMQConn)
+	healthChecker := health.NewHealthChecker(rdb, rabbitMQConn)
 	r := srv.GetRouter()
 	r.HandleFunc("/health", healthChecker.Handler()).Methods("GET")
 	r.HandleFunc("/ready", healthChecker.ReadinessHandler()).Methods("GET")
 	r.HandleFunc("/live", health.LivenessHandler()).Methods("GET")
 
-	// initialize worker
+	// Initialize worker
 	errgrp, ctx := errgroup.WithContext(ctx)
 	w := worker.New(errgrp, ctx)
 
-	// HMLALERT
+	// HMALERT
 	hmalertProducerEvent := hmalert.NewEvent(rabbitMQConn)
 	hmalertService := hmalert.NewService(discordWebhookInfo, discordWebhookWarning, discordWebhookError, hmalertProducerEvent)
 	hmalert.RegisterHandler(srv, hmalertService)
@@ -115,25 +122,28 @@ func main() {
 	hmalertConsumerEvent := hmalert.NewEvent(rabbitMQConn)
 	hmalert.RegisterWorkers(w, hmalertConsumerEvent, hmalertService)
 
-	// HTSTT
-	hmsttStore := hmstt.NewStore(gormPostgres)
+	// HMSTT
+	hmsttStore := hmstt.NewStore(rdb)
 	hmsttEvent := hmstt.NewEvent(rabbitMQConn)
 	hmsttService := hmstt.NewService(hmsttStore, hmsttEvent, hmalertService)
 	hmstt.RegisterHandlers(srv, hmsttService)
 
 	// HMMON
-	hmmon.RegisterWorkers(w, hmsttService, hmalertService, config.InternetCheck)
+	hmmon.RegisterWorkers(w, hmsttService, hmalertService, cfg.InternetCheck)
+
+	// Admin API key management
+	apikeyService := hmapikey.NewService(keyStore)
+	hmapikey.RegisterHandlers(srv, apikeyService)
 
 	errgrp.Go(func() error {
 		return srv.Start(ctx)
 	})
 
-	// start workers
 	if err := errgrp.Wait(); err != nil {
 		log.Error().Err(err).Msg("closing application due to error")
 	}
 
-	// Close Connection
+	// Graceful shutdown
 	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -141,7 +151,7 @@ func main() {
 		log.Error().Err(err).Msg("failed to shutdown http server")
 	}
 	rabbitmq.Close(closeCtx, rabbitMQConn)
-	postgres.Close(closeCtx, gormPostgres)
+	internalredis.Close(closeCtx, rdb)
 
 	if err := otelShutdown(closeCtx); err != nil {
 		log.Error().Err(err).Msg("failed to shutdown OpenTelemetry")

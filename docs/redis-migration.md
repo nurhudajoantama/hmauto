@@ -1,145 +1,75 @@
-# Redis Migration
+# Redis
 
-Replacing PostgreSQL/GORM with Redis for all persistent storage.
+Redis is the sole persistent storage. No SQL/ORM dependency.
 
-## Redis requirements
+## Production configuration
 
-- **Persistent** — must run with `appendonly yes` (AOF) or RDB snapshots. Not ephemeral.
-- Recommended: `appendonly yes` + `appendfsync everysec` in `redis.conf`.
-- No TTL on state keys or API keys unless explicitly set.
-- Single Redis DB (db 0) is fine; use key namespacing instead of multiple DBs.
+Redis must run with persistence enabled — not ephemeral:
 
-## Config struct changes
-
-In `internal/config/types.go`, replace `SQL` with `Redis`:
-
-```go
-type Redis struct {
-    Host     string `yaml:"host"`
-    Port     string `yaml:"port"`
-    Password string `yaml:"password"`
-    DB       int    `yaml:"db"`
-}
-
-func (r Redis) Addr() string {
-    return fmt.Sprintf("%s:%s", r.Host, r.Port)
-}
+```conf
+appendonly yes
+appendfsync everysec
 ```
 
-In `Config` struct:
-- Remove `DB SQL`
-- Add `Redis Redis`
-- Add `Security.AdminKey string`
+RDB snapshots are also acceptable for lower durability requirements, but AOF is recommended for this use case (state + API keys must survive restarts).
+
+## Config
+
+```yaml
+redis:
+  host: "localhost"
+  port: "6379"
+  password: ""
+  db: 0
+```
+
+Client: `github.com/redis/go-redis/v9` via `internal/redis.NewClient(cfg)`.
 
 ## Key schema
 
-### hmstt state
+### State (hmstt)
 
 ```
-Key pattern : hmstt:{type}
-Redis type  : Hash
-Field       : {k}   (the sub-key within the type)
-Value       : JSON  {"value":"on","updated_at":"2024-01-01T00:00:00Z"}
+Redis type : Hash
+Key        : hmstt:{type}
+Field      : {k}
+Value      : JSON  {"value":"on","updated_at":"2024-01-01T00:00:00Z"}
 ```
 
-Examples:
-```
-HSET hmstt:switch  modem_switch  '{"value":"on","updated_at":"..."}'
-HSET hmstt:switch  router        '{"value":"off","updated_at":"..."}'
-HGET hmstt:switch  modem_switch  → '{"value":"on","updated_at":"..."}'
-HGETALL hmstt:switch             → all switch states
-```
+Operations:
+- `HSET hmstt:{type} {k} {json}` — set/update a state value
+- `HGET hmstt:{type} {k}` — read single state
+- `HGETALL hmstt:{type}` — all states for a type
+- `KEYS hmstt:*` + HGETALL per key — all states (used in `GetAll`)
 
-State type allowlist (from `constant.go`):
-- `switch` → allowed values: `on`, `off`
+Implementation: `app/hmstt/store.go` → `HmsttStore`
 
-New states for new types are added by simply writing to Redis — no migration needed.
+Current allowed types and values:
+- `switch` → `on` | `off`
+
+Adding a new type: add it to `canTypeChangedWithKey` in `app/hmstt/util.go`.
 
 ### API keys
 
 ```
-Key pattern : apikey:{key_value}
-Redis type  : String (JSON)
-Value       : {"label":"iot-device-1","created_at":"...","last_used":"..."}
+Redis type : String
+Key        : apikey:{key_value}
+Value      : JSON  {"label":"iot-1","created_at":"...","last_used":"..."}
 
-Index set   : apikeys:index   (Redis Set, members = all active key values)
+Redis type : Set
+Key        : apikeys:index
+Members    : all active key_values
 ```
 
 Operations:
-- **Validate**: `EXISTS apikey:{key}` or `GET apikey:{key}` (non-null = valid)
-- **Create**: `SET apikey:{key} {json}` + `SADD apikeys:index {key}`
-- **Revoke**: `DEL apikey:{key}` + `SREM apikeys:index {key}`
-- **List**: `SMEMBERS apikeys:index` → for each, `GET apikey:{member}`
+- `SET apikey:{key} {json}` + `SADD apikeys:index {key}` — create (pipelined)
+- `GET apikey:{key}` — validate (non-nil = valid)
+- `DEL apikey:{key}` + `SREM apikeys:index {key}` — revoke
+- `SMEMBERS apikeys:index` → `GET` each — list
 
-## Store interface (hmstt)
-
-Replace `HmsttStore` (GORM) with a Redis-backed store implementing:
-
-```go
-type StateStore interface {
-    GetState(ctx context.Context, tipe, k string) (StateEntry, error)
-    SetState(ctx context.Context, tipe, k, value string) error
-    GetAllByType(ctx context.Context, tipe string) ([]StateEntry, error)
-    GetAll(ctx context.Context) ([]StateEntry, error)
-}
-
-type StateEntry struct {
-    Type      string
-    K         string
-    Value     string
-    UpdatedAt time.Time
-}
-```
+Implementation: `internal/apikey/store.go` → `RedisStore`
 
 Notes:
-- `SetState` uses `HSET hmstt:{tipe} {k} {json}` — atomic, no transaction needed for single writes.
-- `GetAll` requires `KEYS hmstt:*` + `HGETALL` per key — acceptable for small datasets (home automation scale).
-- The Postgres transaction pattern (BEGIN/COMMIT/ROLLBACK) maps to Redis WATCH+MULTI/EXEC only if needed for CAS; for simple state set it's not needed.
-
-## New internal package: `internal/redis`
-
-Create `internal/redis/client.go`:
-
-```go
-package redis
-
-import (
-    "context"
-    "github.com/redis/go-redis/v9"
-    "github.com/nurhudajoantama/hmauto/internal/config"
-)
-
-func NewClient(cfg config.Redis) *redis.Client {
-    rdb := redis.NewClient(&redis.Options{
-        Addr:     cfg.Addr(),
-        Password: cfg.Password,
-        DB:       cfg.DB,
-    })
-    return rdb
-}
-
-func Close(ctx context.Context, rdb *redis.Client) {
-    if err := rdb.Close(); err != nil {
-        // log
-    }
-}
-```
-
-Recommended client: `github.com/redis/go-redis/v9`
-
-## Health check update
-
-Replace Postgres health check with Redis ping:
-
-```go
-func (h *HealthChecker) checkRedis(ctx context.Context) error {
-    return h.redis.Ping(ctx).Err()
-}
-```
-
-## Files to delete after migration
-
-- `internal/postgres/` (entire package)
-- `app/hmstt/model.go` (GORM model)
-- `views/` (HTMX templates)
-- Remove GORM deps from `go.mod`
+- `last_used` is updated asynchronously on validate (background goroutine, non-blocking)
+- `ListKeys` returns `key_hint` only (first4...last4) — never the full key value
+- `RevokeKey` returns `ErrKeyNotFound` if the key doesn't exist (`DEL` returns 0)

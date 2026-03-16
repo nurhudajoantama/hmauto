@@ -7,17 +7,27 @@ import (
 	"time"
 
 	"github.com/nurhudajoantama/hmauto/app/hmalert"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
 )
 
+var hmsttStateChangesTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "hmstt_state_changes_total",
+		Help: "Total number of state changes.",
+	},
+	[]string{"type"},
+)
+
 type HmsttService struct {
-	store *HmsttStore
+	store StateStore
 	event *HmsttEvent
 
 	hmalertService *hmalert.HmalerService
 }
 
-func NewService(hmsttStore *HmsttStore, hmsttEvent *HmsttEvent, hmalertService *hmalert.HmalerService) *HmsttService {
+func NewService(hmsttStore StateStore, hmsttEvent *HmsttEvent, hmalertService *hmalert.HmalerService) *HmsttService {
 	return &HmsttService{
 		store:          hmsttStore,
 		event:          hmsttEvent,
@@ -25,48 +35,36 @@ func NewService(hmsttStore *HmsttStore, hmsttEvent *HmsttEvent, hmalertService *
 	}
 }
 
-type GetStateResponse struct {
-	States string `json:"state"`
-}
-
-func (s *HmsttService) GetState(ctx context.Context, tipe, key string) (string, error) {
+func (s *HmsttService) GetState(ctx context.Context, tipe, key string) (StateEntry, error) {
 	l := zerolog.Ctx(ctx)
 
-	generatedKey, ok := generateKey(tipe, key)
-	if !ok {
-		l.Error().Err(errors.New("invalid type or key")).Msg("GetState failed")
-		return "", errors.New("INVALID TYPE OR KEY")
+	if tipe == "" || key == "" {
+		l.Error().Msg("GetState: empty type or key")
+		return StateEntry{}, errors.New("INVALID TYPE OR KEY")
 	}
 
-	result, err := s.store.GetState(ctx, generatedKey)
+	result, err := s.store.GetState(ctx, tipe, key)
 	if err != nil {
 		l.Error().Err(err).Msg("GetState failed")
-		return "", errors.New("GET STATE ERROR")
-	}
-
-	return result.Value, nil
-}
-
-func (s *HmsttService) GetStateDetail(ctx context.Context, tipe, key string) (hmsttState, error) {
-	generatedKey, ok := generateKey(tipe, key)
-	if !ok {
-		return hmsttState{}, errors.New("INVALID TYPE OR KEY")
-	}
-
-	result, err := s.store.GetState(ctx, generatedKey)
-	if err != nil {
-		return hmsttState{}, errors.New("GET STATE ERROR")
+		return StateEntry{}, errors.New("GET STATE ERROR")
 	}
 
 	return result, nil
 }
 
-func (s *HmsttService) GetAllStates(ctx context.Context) ([]hmsttState, error) {
-	results, err := s.store.GetAllStates(ctx)
+func (s *HmsttService) GetAllByType(ctx context.Context, tipe string) ([]StateEntry, error) {
+	results, err := s.store.GetAllByType(ctx, tipe)
+	if err != nil {
+		return nil, errors.New("GET ALL BY TYPE ERROR")
+	}
+	return results, nil
+}
+
+func (s *HmsttService) GetAllStates(ctx context.Context) ([]StateEntry, error) {
+	results, err := s.store.GetAll(ctx)
 	if err != nil {
 		return nil, errors.New("GET ALL STATES ERROR")
 	}
-
 	return results, nil
 }
 
@@ -77,52 +75,21 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 	})
 	l.Info().Msg("Handling SetState service")
 
-	generatedKey, ok := canTypeChangedWithKey(tipe, key, value)
-	if !ok {
+	if _, ok := canTypeChangedWithKey(tipe, key, value); !ok {
 		l.Error().Err(errors.New("invalid type or key")).Msg("SetState failed")
 		return errors.New("INVALID TYPE OR KEY")
 	}
 
-	tx := s.store.Transaction()
-	if tx.Error != nil {
-		l.Error().Err(tx.Error).Msg("failed to start transaction")
-		return errors.New("SET STATE ERROR")
-	}
-
-	committed := false
-	defer func() {
-		if !committed {
-			if err := s.store.Rollback(tx); err != nil {
-				l.Error().Err(err).Msg("failed to rollback transaction")
-			}
-		}
-	}()
-
-	state, err := s.store.GetState(ctx, generatedKey)
-	if err != nil {
-		l.Error().Err(err).Msg("GetState before SetState failed")
-		return errors.New("GET STATE BEFORE SET ERROR")
-	}
-
-	state.Value = value
-
-	err = s.store.SetStateTx(ctx, tx, &state)
-	if err != nil {
+	if err := s.store.SetState(ctx, tipe, key, value); err != nil {
 		l.Error().Err(err).Msg("SetState failed")
 		return errors.New("SET STATE ERROR")
 	}
+	hmsttStateChangesTotal.WithLabelValues(tipe).Inc()
 
-	err = s.event.StateChange(ctx, generatedKey, value)
-	if err != nil {
-		l.Error().Err(err).Msg("StateChange failed")
-		return errors.New("STATE CHANGE ERROR")
+	generatedKey := PREFIX_HMSTT + KEY_DELIMITER + tipe + KEY_DELIMITER + key
+	if err := s.event.StateChange(ctx, generatedKey, value); err != nil {
+		l.Error().Err(err).Msg("StateChange event failed")
 	}
-
-	if err := s.store.Commit(tx); err != nil {
-		l.Error().Err(err).Msg("failed to commit state transaction")
-		return errors.New("SET STATE ERROR")
-	}
-	committed = true
 
 	alertCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -130,7 +97,7 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 	if err := s.hmalertService.PublishAlert(alertCtx, hmalert.PublishAlertBody{
 		Tipe:    "Hmstate Change",
 		Level:   hmalert.LEVEL_INFO,
-		Message: fmt.Sprintf("State %s changed to %s", generatedKey, value),
+		Message: fmt.Sprintf("State %s.%s changed to %s", tipe, key, value),
 	}); err != nil {
 		l.Error().Err(err).Msg("failed to publish hmstt state-change alert")
 	}

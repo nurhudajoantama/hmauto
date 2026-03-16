@@ -1,10 +1,8 @@
 # API Design
 
-All endpoints return JSON. No HTML. No HTMX.
+All endpoints return JSON. No HTML.
 
 ## Response envelope
-
-Use `internal/response` for consistent shape:
 
 ```json
 // success
@@ -14,111 +12,90 @@ Use `internal/response` for consistent shape:
 {"success": false, "error": "message"}
 ```
 
+Use `internal/response.SuccessResponse` and `internal/response.ErrorResponse`.
+
 ## Authentication
 
-### Regular API keys
+### Regular API keys (protected routes)
 
 - Header: `Authorization: Bearer {key}`
-- Middleware validates: `GET apikey:{key}` from Redis → non-null = authorized
-- On successful auth: update `last_used` in background (non-blocking)
-- On failure: `401 Unauthorized`
+- Validated via Redis: `GET apikey:{key}` — non-nil = valid
+- On success: `last_used` updated asynchronously
+- On failure: `401 {"success":false,"error":"Unauthorized"}`
+- Applied to: `/hmstt/*`, `/hmalert/*`
 
-### Admin key
+### Admin key (admin routes)
 
 - Same header format: `Authorization: Bearer {admin_key}`
-- Validated against `config.Security.AdminKey` (not Redis) — config only
-- Applied only to `/admin/*` subrouter
-- Admin key must NOT be stored in Redis (separate code path)
+- Validated against `config.Security.AdminKey` only — no Redis lookup
+- Applied to: `/admin/*`
+- Admin key must not be stored in or validated via Redis
 
-## Endpoints
-
-### Public (no auth)
+## Public endpoints
 
 ```
-GET  /healthz         → 200 "OK"
-GET  /hello           → 200 "Hello, World!"
-GET  /health          → 200 JSON {redis: ok/fail, rabbitmq: ok/fail}
-GET  /ready           → 200/503 based on dependency status
-GET  /live            → 200 always (liveness)
-GET  /metrics         → Prometheus text format
+GET /healthz   → 200 "OK"
+GET /hello     → 200 "Hello, World!"
+GET /health    → 200/503 JSON:
+                 {"status":"healthy","timestamp":"...","dependencies":{"redis":"healthy","rabbitmq":"healthy"}}
+GET /ready     → 200 "ready" | 503 "not ready"
+GET /live      → 200 "alive"
+GET /metrics   → Prometheus text format
 ```
 
-### Protected — hmalert
+## Protected — hmalert
 
 ```
 POST /hmalert/publish
-  Body: {"level":"info|warning|error", "message":"...", "tipe":"..."}
-  → 202 {"success":true, "data":{"queued":true}}
+  Body: {"level":"info|warning|error","message":"...","tipe":"..."}
+  → 202 {"success":true,"data":null}
 
 POST /hmalert/publishbatch
   Body: [{"level":"...","message":"...","tipe":"..."}, ...]
-  → 202 {"success":true, "data":{"queued":N}}
+  → 202 {"success":true,"data":null}
 ```
 
-### Protected — hmstt
+Alert levels: `info`, `warning`, `error`
+
+## Protected — hmstt
 
 ```
-GET  /hmstt/states
-  → 200 {"success":true, "data":[{"type":"switch","key":"modem_switch","value":"on","updated_at":"..."},...]}
+GET /hmstt/states
+  → 200 {"success":true,"data":[{"type":"switch","key":"modem_switch","value":"on","updated_at":"..."},...]}
 
-GET  /hmstt/states/{type}
-  → 200 {"success":true, "data":[...]}
-  → 404 if type has no states
+GET /hmstt/states/{type}
+  → 200 {"success":true,"data":[...]}
+  → 404 {"success":false,"error":"no states found for type"} if type has no entries
 
-GET  /hmstt/state/{type}/{key}
-  → 200 {"success":true, "data":{"type":"switch","key":"modem_switch","value":"on","updated_at":"..."}}
-  → 404 if not found
+GET /hmstt/state/{type}/{key}
+  → 200 {"success":true,"data":{"type":"switch","key":"modem_switch","value":"on","updated_at":"..."}}
+  → 404 {"success":false,"error":"state not found"}
 
 POST /hmstt/state/{type}/{key}
   Body: {"value":"on"}
-  → 200 {"success":true, "data":{"type":"switch","key":"modem_switch","value":"on","updated_at":"..."}}
-  → 400 if invalid type/key/value
+  → 200 {"success":true,"data":{"type":"switch","key":"modem_switch","value":"on","updated_at":"..."}}
+  → 400 {"success":false,"error":"INVALID TYPE OR KEY"} — invalid type/key/value combination
+  → 400 {"success":false,"error":"value is required"} — empty value
 ```
 
-### Admin — API key management
+Currently valid type+value combinations (enforced in `canTypeChangedWithKey`):
+- type `switch`, values: `on` | `off`
+
+## Admin — API key management
 
 ```
-GET  /admin/apikeys
-  → 200 {"success":true, "data":[{"key_hint":"abc...xyz","label":"iot-1","created_at":"...","last_used":"..."},...]}
-  Note: never return full key value in list
+GET /admin/apikeys
+  → 200 {"success":true,"data":[{"key_hint":"abcd...efgh","label":"iot-1","created_at":"...","last_used":"..."},...]}
+  Note: key_hint = first 4 chars + "..." + last 4 chars; full key never returned in list
 
 POST /admin/apikeys
   Body: {"label":"my-device"}
-  → 201 {"success":true, "data":{"key":"<full key — only returned once>","label":"my-device","created_at":"..."}}
+  → 201 {"success":true,"data":{"key":"<full 64-char hex key, returned only once>","label":"my-device","created_at":"..."}}
+  → 400 if label is empty
 
 DELETE /admin/apikeys/{key}
-  → 200 {"success":true}
-  → 404 if key not found
+  → 200 {"success":true,"data":null}
+  → 404 {"success":false,"error":"api key not found"} if key doesn't exist
 ```
 
-Key generation: `crypto/rand` → 32 bytes → hex string (64 chars). Never use `math/rand`.
-
-## Removed endpoints
-
-These are deleted as part of HTMX removal:
-- `GET  /hmstt/` (HTML index)
-- `GET  /hmstt/statehtml/{type}/{key}` (HTMX fragment)
-- `POST /hmstt/setstatehtml/{type}/{key}` (HTMX form handler)
-- `GET  /hmstt/getstatevalue/{type}/{key}` → replaced by `GET /hmstt/state/{type}/{key}`
-
-## Route registration pattern
-
-```go
-// in RegisterHandlers:
-protected := srv.GetRouter().PathPrefix("/hmstt").Subrouter()
-srv.ApplyAuthMiddleware(protected)  // attaches Redis-backed auth
-
-protected.HandleFunc("/states", h.listAllStates).Methods("GET")
-protected.HandleFunc("/states/{type}", h.listStatesByType).Methods("GET")
-protected.HandleFunc("/state/{type}/{key}", h.getState).Methods("GET")
-protected.HandleFunc("/state/{type}/{key}", h.setState).Methods("POST")
-```
-
-Admin routes — new `server.ApplyAdminMiddleware(subrouter)` method:
-```go
-admin := srv.GetRouter().PathPrefix("/admin").Subrouter()
-srv.ApplyAdminMiddleware(admin)  // uses config AdminKey
-admin.HandleFunc("/apikeys", h.listKeys).Methods("GET")
-admin.HandleFunc("/apikeys", h.createKey).Methods("POST")
-admin.HandleFunc("/apikeys/{key}", h.revokeKey).Methods("DELETE")
-```
+Key generation: `crypto/rand` 32 bytes → hex (64-char string). Implemented in `internal/apikey.RedisStore.CreateKey`.

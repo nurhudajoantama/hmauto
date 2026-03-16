@@ -9,6 +9,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
 )
 
 type HmalertEvent struct {
@@ -38,6 +39,9 @@ func NewEvent(conn *amqp.Connection) *HmalertEvent {
 }
 
 func (e *HmalertEvent) PublishAlert(ctx context.Context, body alertEvent) error {
+	ctx, span := otel.Tracer("hmalert").Start(ctx, "event.PublishAlert")
+	defer span.End()
+
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 

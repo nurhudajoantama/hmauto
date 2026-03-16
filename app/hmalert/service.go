@@ -6,7 +6,17 @@ import (
 	"time"
 
 	"github.com/nurhudajoantama/hmauto/internal/discord"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
+)
+
+var hmalertPublishedTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "hmalert_published_total",
+		Help: "Total number of alerts published.",
+	},
+	[]string{"level"},
 )
 
 type HmalerService struct {
@@ -95,6 +105,7 @@ func (s *HmalerService) PublishAlert(ctx context.Context, b PublishAlertBody) er
 	if err != nil {
 		return err
 	}
+	hmalertPublishedTotal.WithLabelValues(b.Level).Inc()
 	return nil
 }
 

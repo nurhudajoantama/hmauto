@@ -8,35 +8,34 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/hlog"
-	"gorm.io/gorm"
 )
 
-// HealthChecker provides health check functionality
+// HealthChecker provides health check functionality.
 type HealthChecker struct {
-	db           *gorm.DB
-	rabbitmq     *amqp.Connection
-	dependencies map[string]func(context.Context) error
+	redis    *redis.Client
+	rabbitmq *amqp.Connection
+	deps     map[string]func(context.Context) error
 }
 
-// HealthStatus represents the health status of the application
+// HealthStatus represents the health status of the application.
 type HealthStatus struct {
 	Status       string            `json:"status"`
 	Timestamp    time.Time         `json:"timestamp"`
 	Dependencies map[string]string `json:"dependencies"`
 }
 
-// NewHealthChecker creates a new health checker
-func NewHealthChecker(db *gorm.DB, rabbitmq *amqp.Connection) *HealthChecker {
+// NewHealthChecker creates a new health checker.
+func NewHealthChecker(rdb *redis.Client, rabbitmq *amqp.Connection) *HealthChecker {
 	hc := &HealthChecker{
-		db:           db,
-		rabbitmq:     rabbitmq,
-		dependencies: make(map[string]func(context.Context) error),
+		redis:    rdb,
+		rabbitmq: rabbitmq,
+		deps:     make(map[string]func(context.Context) error),
 	}
 
-	// Register built-in dependency checks
-	if db != nil {
-		hc.RegisterDependency("database", hc.checkDatabase)
+	if rdb != nil {
+		hc.RegisterDependency("redis", hc.checkRedis)
 	}
 	if rabbitmq != nil {
 		hc.RegisterDependency("rabbitmq", hc.checkRabbitMQ)
@@ -45,40 +44,29 @@ func NewHealthChecker(db *gorm.DB, rabbitmq *amqp.Connection) *HealthChecker {
 	return hc
 }
 
-// RegisterDependency registers a custom dependency check
+// RegisterDependency registers a custom dependency check.
 func (hc *HealthChecker) RegisterDependency(name string, checkFunc func(context.Context) error) {
-	hc.dependencies[name] = checkFunc
+	hc.deps[name] = checkFunc
 }
 
-// checkDatabase checks if database connection is healthy
-func (hc *HealthChecker) checkDatabase(ctx context.Context) error {
-	if hc.db == nil {
+func (hc *HealthChecker) checkRedis(ctx context.Context) error {
+	if hc.redis == nil {
 		return nil
 	}
-
-	sqlDB, err := hc.db.DB()
-	if err != nil {
-		return err
-	}
-
-	// Ping with timeout
-	return sqlDB.PingContext(ctx)
+	return hc.redis.Ping(ctx).Err()
 }
 
-// checkRabbitMQ checks if RabbitMQ connection is healthy
 func (hc *HealthChecker) checkRabbitMQ(ctx context.Context) error {
 	if hc.rabbitmq == nil {
 		return nil
 	}
-
 	if hc.rabbitmq.IsClosed() {
 		return errors.New("rabbitmq connection closed")
 	}
-
 	return nil
 }
 
-// Check performs health check on all dependencies
+// Check performs health check on all dependencies.
 func (hc *HealthChecker) Check(ctx context.Context) HealthStatus {
 	status := HealthStatus{
 		Status:       "healthy",
@@ -86,15 +74,13 @@ func (hc *HealthChecker) Check(ctx context.Context) HealthStatus {
 		Dependencies: make(map[string]string),
 	}
 
-	// Check each dependency with timeout
-	for name, checkFunc := range hc.dependencies {
+	for name, checkFunc := range hc.deps {
 		checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		err := checkFunc(checkCtx)
 		cancel()
 
 		if err != nil {
 			status.Dependencies[name] = "unhealthy: " + err.Error()
-			// Mark as unhealthy if any dependency fails
 			status.Status = "unhealthy"
 		} else {
 			status.Dependencies[name] = "healthy"
@@ -104,7 +90,7 @@ func (hc *HealthChecker) Check(ctx context.Context) HealthStatus {
 	return status
 }
 
-// Handler returns an HTTP handler for health checks
+// Handler returns an HTTP handler for health checks.
 func (hc *HealthChecker) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := hlog.FromRequest(r)
@@ -113,8 +99,6 @@ func (hc *HealthChecker) Handler() http.HandlerFunc {
 		status := hc.Check(ctx)
 
 		w.Header().Set("Content-Type", "application/json")
-		
-		// Set appropriate HTTP status code
 		if status.Status == "healthy" {
 			w.WriteHeader(http.StatusOK)
 		} else {
@@ -127,7 +111,7 @@ func (hc *HealthChecker) Handler() http.HandlerFunc {
 	}
 }
 
-// ReadinessHandler returns a simple readiness check handler
+// ReadinessHandler returns a readiness probe handler.
 func (hc *HealthChecker) ReadinessHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -143,10 +127,9 @@ func (hc *HealthChecker) ReadinessHandler() http.HandlerFunc {
 	}
 }
 
-// LivenessHandler returns a simple liveness check handler
+// LivenessHandler returns a liveness probe handler.
 func LivenessHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Liveness is simple - if we can respond, we're alive
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("alive"))
 	}

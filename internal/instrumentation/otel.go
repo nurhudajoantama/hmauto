@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/nurhudajoantama/hmauto/internal/config"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -12,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
@@ -24,17 +25,15 @@ import (
 type otl struct {
 	resource *resource.Resource
 	exporter *otlptrace.Exporter
+	cfg      config.OTel
 }
 
 // SetupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
-func SetupOTelSDK(ctx context.Context) (func(context.Context) error, error) {
+func SetupOTelSDK(ctx context.Context, cfg config.OTel) (func(context.Context) error, error) {
 	var shutdownFuncs []func(context.Context) error
 	var err error
 
-	// shutdown calls cleanup functions registered via shutdownFuncs.
-	// The errors from the calls are joined.
-	// Each registered cleanup will be invoked once.
 	shutdown := func(ctx context.Context) error {
 		var err error
 		for _, fn := range shutdownFuncs {
@@ -44,46 +43,48 @@ func SetupOTelSDK(ctx context.Context) (func(context.Context) error, error) {
 		return err
 	}
 
-	// handleErr calls shutdown for cleanup and makes sure that all errors are returned.
 	handleErr := func(inErr error) {
 		err = errors.Join(inErr, shutdown(ctx))
+	}
+
+	serviceName := cfg.ServiceName
+	if serviceName == "" {
+		serviceName = "hmauto"
 	}
 
 	res, err := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String("stthmauto-service"),
+			semconv.ServiceNameKey.String(serviceName),
 			semconv.ServiceVersionKey.String("0.0.1"),
 			attribute.String("environment", "production"),
 		),
 	)
 	if err != nil {
-		zerolog.Error().Err(err).Msg("failed to create resource")
+		zerolog.Error().Err(err).Msg("failed to create OTEL resource")
 	}
 
-	traceExporter, err := otlptrace.New(
-		ctx,
-		otlptracegrpc.NewClient(
-			// Define the endpoint directly
-			otlptracegrpc.WithEndpoint("your-collector-host:4317"),
-			otlptracegrpc.WithInsecure(), // Use WithInsecure() for HTTP, remove for HTTPS
-		),
-	)
-	if err != nil {
-		return nil, err
+	o := &otl{resource: res, cfg: cfg}
+
+	// Setup trace exporter: use OTLP if endpoint configured, else stdout.
+	if cfg.Enabled && cfg.Endpoint != "" {
+		traceExporter, err := otlptrace.New(
+			ctx,
+			otlptracegrpc.NewClient(
+				otlptracegrpc.WithEndpoint(cfg.Endpoint),
+				otlptracegrpc.WithInsecure(),
+			),
+		)
+		if err != nil {
+			return nil, err
+		}
+		o.exporter = traceExporter
 	}
 
-	o := &otl{
-		resource: res,
-		exporter: traceExporter,
-	}
-
-	// Set up propagator.
 	prop := o.newPropagator()
 	otel.SetTextMapPropagator(prop)
 
-	// Set up trace provider.
 	tracerProvider, err := o.newTracerProvider()
 	if err != nil {
 		handleErr(err)
@@ -92,7 +93,6 @@ func SetupOTelSDK(ctx context.Context) (func(context.Context) error, error) {
 	shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
 	otel.SetTracerProvider(tracerProvider)
 
-	// Set up meter provider.
 	meterProvider, err := o.newMeterProvider()
 	if err != nil {
 		handleErr(err)
@@ -101,7 +101,6 @@ func SetupOTelSDK(ctx context.Context) (func(context.Context) error, error) {
 	shutdownFuncs = append(shutdownFuncs, meterProvider.Shutdown)
 	otel.SetMeterProvider(meterProvider)
 
-	// Set up logger provider.
 	loggerProvider, err := o.newLoggerProvider()
 	if err != nil {
 		handleErr(err)
@@ -121,18 +120,20 @@ func (o *otl) newPropagator() propagation.TextMapPropagator {
 }
 
 func (o *otl) newTracerProvider() (*trace.TracerProvider, error) {
-	traceExporter, err := stdouttrace.New(
-		stdouttrace.WithPrettyPrint())
-	if err != nil {
-		return nil, err
+	var batcher trace.TracerProviderOption
+
+	if o.exporter != nil {
+		batcher = trace.WithBatcher(o.exporter)
+	} else {
+		stdExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
+		if err != nil {
+			return nil, err
+		}
+		batcher = trace.WithBatcher(stdExporter)
 	}
 
 	tracerProvider := trace.NewTracerProvider(
-		trace.WithBatcher(
-			traceExporter,
-			// Default is 5s. Set to 1s for demonstrative purposes.
-			// trace.WithBatchTimeout(time.Second),
-		),
+		batcher,
 		trace.WithSampler(trace.AlwaysSample()),
 		trace.WithResource(o.resource),
 	)
@@ -140,33 +141,21 @@ func (o *otl) newTracerProvider() (*trace.TracerProvider, error) {
 }
 
 func (o *otl) newMeterProvider() (*metric.MeterProvider, error) {
-	// metricExporter, err := stdoutmetric.New()
-	// if err != nil {
-	// 	return nil, err
-	// }
-
 	meterProvider := metric.NewMeterProvider(
-		// metric.WithReader(
-		// metric.NewPeriodicReader(
-		// 	metricExporter,
-		// 	// Default is 1m. Set to 3s for demonstrative purposes.
-		// 	metric.WithInterval(3*time.Second),
-		// ),
-		// ),
 		metric.WithResource(o.resource),
 	)
 	return meterProvider, nil
 }
 
-func (o *otl) newLoggerProvider() (*log.LoggerProvider, error) {
+func (o *otl) newLoggerProvider() (*sdklog.LoggerProvider, error) {
 	logExporter, err := stdoutlog.New()
 	if err != nil {
 		return nil, err
 	}
 
-	loggerProvider := log.NewLoggerProvider(
-		log.WithProcessor(log.NewBatchProcessor(logExporter)),
-		log.WithResource(o.resource),
+	loggerProvider := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
+		sdklog.WithResource(o.resource),
 	)
 	return loggerProvider, nil
 }

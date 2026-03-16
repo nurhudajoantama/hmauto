@@ -1,174 +1,154 @@
 package hmstt
 
 import (
-	"html/template"
+	"encoding/json"
 	"net/http"
 
 	"github.com/gorilla/mux"
 	"github.com/nurhudajoantama/hmauto/app/server"
+	"github.com/nurhudajoantama/hmauto/internal/response"
 	"github.com/rs/zerolog"
 )
 
 type HmsttHandler struct {
-	service   *HmsttService
-	templates *template.Template
+	service *HmsttService
+}
+
+type stateResponse struct {
+	Type      string `json:"type"`
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+func entryToResponse(e StateEntry) stateResponse {
+	return stateResponse{
+		Type:      e.Type,
+		Key:       e.K,
+		Value:     e.Value,
+		UpdatedAt: e.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+	}
 }
 
 func RegisterHandlers(s *server.Server, svc *HmsttService) {
-	templates := template.Must(template.ParseGlob(HTML_TEMPLATE_PATTERN))
+	h := &HmsttHandler{service: svc}
 
-	h := &HmsttHandler{
-		service:   svc,
-		templates: templates,
-	}
-	srv := s.GetRouter()
-	srv.HandleFunc("/", h.handleIndex).Methods("GET")
+	protected := s.GetRouter().PathPrefix("/hmstt").Subrouter()
+	s.ApplyAuthMiddleware(protected)
 
-	hmsttGroup := srv.PathPrefix("/hmstt").Subrouter()
-	hmsttGroup.HandleFunc("/", h.handleIndex).Methods("GET")
-	hmsttGroup.HandleFunc("/statehtml/{type}/{key}", h.handleGetStateHTML).Methods("GET")
-	hmsttGroup.HandleFunc("/setstatehtml/{type}/{key}", h.handleSetStateHTML).Methods("POST")
-
-	hmsttGroup.HandleFunc("/getstatevalue/{type}/{key}", h.handleGetState).Methods("GET")
+	protected.HandleFunc("/states", h.listAllStates).Methods("GET")
+	protected.HandleFunc("/states/{type}", h.listStatesByType).Methods("GET")
+	protected.HandleFunc("/state/{type}/{key}", h.getState).Methods("GET")
+	protected.HandleFunc("/state/{type}/{key}", h.setState).Methods("POST")
 }
 
-func (h *HmsttHandler) handleGetState(w http.ResponseWriter, r *http.Request) {
+func (h *HmsttHandler) listAllStates(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
-	p := mux.Vars(r)
-	key := p["key"]
-	tipe := p["type"]
-
 	l := zerolog.Ctx(ctx)
-	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
-		return c.Str("hmstt_type", tipe).Str("hmstt_key", key)
-	})
-	l.Info().Msg("Handling GetState request")
+	l.Info().Msg("Handling listAllStates request")
 
-	result, err := h.service.GetState(ctx, tipe, key)
+	entries, err := h.service.GetAllStates(ctx)
 	if err != nil {
-		returnErrorState(w)
+		l.Error().Err(err).Msg("listAllStates failed")
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to get states", err)
 		return
 	}
-	l.Debug().Str("state_value", result).Send()
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(result))
-
-	l.Trace().Msgf("GetState request handled successfully")
+	data := make([]stateResponse, 0, len(entries))
+	for _, e := range entries {
+		data = append(data, entryToResponse(e))
+	}
+	response.SuccessResponse(w, data)
 }
 
-// handleIndex serves the main (and only) HTML page
-func (h *HmsttHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
+func (h *HmsttHandler) listStatesByType(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
-	l.Info().Msg("Handling Hmstt index page request")
-
-	data := map[string]interface{}{
-		"states": []hmsttState{},
-	}
-
-	states, err := h.service.GetAllStates(ctx)
-	if err == nil {
-		data["states"] = states
-	}
-	l.Debug().Interface("data", data).Msg("Rendering index.html")
-
-	if err := h.templates.ExecuteTemplate(w, "index.html", data); err != nil {
-		l.Error().Err(err).Msg("Failed to execute template")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-	}
-}
-
-// handleState is another HTMX endpoint returning an HTML string
-func (h *HmsttHandler) handleGetStateHTML(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	l := zerolog.Ctx(ctx)
-	l.Info().Msg("Handling GetStateHTML request")
-
 	p := mux.Vars(r)
-	key := p["key"]
 	tipe := p["type"]
+
+	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("hmstt_type", tipe)
+	})
+	l.Info().Msg("Handling listStatesByType request")
+
+	entries, err := h.service.GetAllByType(ctx, tipe)
+	if err != nil {
+		l.Error().Err(err).Msg("listStatesByType failed")
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to get states", err)
+		return
+	}
+	if len(entries) == 0 {
+		response.ErrorResponse(w, http.StatusNotFound, "no states found for type", nil)
+		return
+	}
+
+	data := make([]stateResponse, 0, len(entries))
+	for _, e := range entries {
+		data = append(data, entryToResponse(e))
+	}
+	response.SuccessResponse(w, data)
+}
+
+func (h *HmsttHandler) getState(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := zerolog.Ctx(ctx)
+	p := mux.Vars(r)
+	tipe := p["type"]
+	key := p["key"]
 
 	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
 		return c.Str("hmstt_type", tipe).Str("hmstt_key", key)
 	})
+	l.Info().Msg("Handling getState request")
 
-	var state hmsttState
-	results, err := h.service.GetStateDetail(ctx, tipe, key)
+	entry, err := h.service.GetState(ctx, tipe, key)
 	if err != nil {
-		l.Error().Err(err).Msg("Failed to get state detail")
-		state = hmsttState{Value: ERR_STRING}
-	} else {
-		state = results
-		l.Debug().Interface("state", state).Msg("Retrieved state detail successfully")
+		l.Error().Err(err).Msg("getState failed")
+		response.ErrorResponse(w, http.StatusNotFound, "state not found", err)
+		return
 	}
 
-	h.returnStateHTML(w, state)
+	response.SuccessResponse(w, entryToResponse(entry))
 }
 
-func (h *HmsttHandler) handleSetStateHTML(w http.ResponseWriter, r *http.Request) {
+func (h *HmsttHandler) setState(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := zerolog.Ctx(ctx)
-	l.Info().Msg("Handling SetStateHTML request")
-
 	p := mux.Vars(r)
-	key := p["key"]
 	tipe := p["type"]
+	key := p["key"]
 
 	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
 		return c.Str("hmstt_type", tipe).Str("hmstt_key", key)
 	})
+	l.Info().Msg("Handling setState request")
 
-	if err := r.ParseForm(); err != nil {
-		l.Error().Err(err).Msg("Failed to parse form")
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("ERROR PARSE FORM"))
+	var body struct {
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		l.Error().Err(err).Msg("setState: failed to decode body")
+		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body", err)
+		return
+	}
+	if body.Value == "" {
+		response.ErrorResponse(w, http.StatusBadRequest, "value is required", nil)
 		return
 	}
 
-	value := r.FormValue("value")
-	if value == "" {
-		l.Error().Msg("State value is empty")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("STATE VALUE EMPTY"))
+	if err := h.service.SetState(ctx, tipe, key, body.Value); err != nil {
+		l.Error().Err(err).Msg("setState failed")
+		response.ErrorResponse(w, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 
-	if err := h.service.SetState(ctx, tipe, key, value); err != nil {
-		l.Error().Err(err).Msg("Failed to set state")
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("ERROR SET STATE"))
-		return
-	}
-
-	var state hmsttState
-	results, err := h.service.GetStateDetail(ctx, tipe, key)
+	entry, err := h.service.GetState(ctx, tipe, key)
 	if err != nil {
-		l.Error().Err(err).Msg("Failed to get state detail after setting state")
-		state = hmsttState{Value: ERR_STRING}
-	} else {
-		state = results
-	}
-
-	h.returnStateHTML(w, state)
-}
-
-func (h *HmsttHandler) returnStateHTML(w http.ResponseWriter, state hmsttState) {
-	var templateData = state
-
-	templateFileName, ok := TYPE_TEMPLATES[state.Type]
-	if !ok {
-		templateFileName = HTML_TEMPLATE_NOTFOUND_TYPE
-	}
-
-	if err := h.templates.ExecuteTemplate(w, templateFileName, templateData); err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		l.Error().Err(err).Msg("setState: get state after set failed")
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to retrieve updated state", err)
 		return
 	}
-}
 
-func returnErrorState(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusNotFound)
-	w.Write([]byte(ERR_STRING))
+	response.SuccessResponse(w, entryToResponse(entry))
 }
