@@ -1,6 +1,7 @@
 package hmstt
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -30,6 +31,7 @@ func RegisterHandlers(s *server.Server, svc *HmsttService) {
 	s.ApplyAuthMiddleware(v1)
 
 	v1.HandleFunc("/states", h.listAllStates).Methods("GET")
+	v1.HandleFunc("/states", h.createState).Methods("POST")
 	v1.HandleFunc("/states/{type}", h.listStatesByType).Methods("GET")
 	v1.HandleFunc("/states/{type}/{key}", h.getState).Methods("GET")
 	v1.HandleFunc("/states/{type}/{key}", h.setState).Methods("PUT")
@@ -139,6 +141,57 @@ func (h *HmsttHandler) getState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.SuccessResponse(w, entryToResponse(entry))
+}
+
+// createState godoc
+//
+//	@Summary		Create a state entry
+//	@Description	Creates a new state for the given type and key. Returns 409 if the key already exists.
+//	@Tags			states
+//	@Accept			json
+//	@Produce		json
+//	@Security		ApiKeyAuth
+//	@Param			body	body		CreateStateRequest							true	"State to create"
+//	@Success		201		{object}	response.JsonResponse{data=StateResponse}	"Created state"
+//	@Failure		400		{object}	response.JsonResponse						"Invalid type/key/value"
+//	@Failure		401		{object}	response.JsonResponse						"Unauthorized"
+//	@Failure		409		{object}	response.JsonResponse						"State already exists"
+//	@Failure		500		{object}	response.JsonResponse						"Internal error"
+//	@Router			/states [post]
+func (h *HmsttHandler) createState(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := zerolog.Ctx(ctx)
+	l.Info().Msg("Handling createState request")
+
+	var body CreateStateRequest
+	if err := request.DecodeAndValidate(r, &body); err != nil {
+		l.Error().Err(err).Msg("createState: validation failed")
+		response.ErrorResponse(w, http.StatusBadRequest, err.Error(), err)
+		return
+	}
+
+	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("hmstt_type", body.Type).Str("hmstt_key", body.Key)
+	})
+
+	if err := h.service.CreateState(ctx, body.Type, body.Key, body.Value); err != nil {
+		if errors.Is(err, ErrStateAlreadyExists) {
+			response.ErrorResponse(w, http.StatusConflict, "state already exists", err)
+			return
+		}
+		l.Error().Err(err).Msg("createState failed")
+		response.ErrorResponse(w, http.StatusBadRequest, err.Error(), err)
+		return
+	}
+
+	entry, err := h.service.GetState(ctx, body.Type, body.Key)
+	if err != nil {
+		l.Error().Err(err).Msg("createState: get state after create failed")
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to retrieve created state", err)
+		return
+	}
+
+	response.CreatedResponse(w, entryToResponse(entry))
 }
 
 // setState godoc

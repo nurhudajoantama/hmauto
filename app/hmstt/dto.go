@@ -12,3 +12,10 @@ type StateResponse struct {
 type SetStateRequest struct {
 	Value string `json:"value" validate:"required" example:"on"`
 }
+
+// CreateStateRequest is the request body for creating a new state entry.
+type CreateStateRequest struct {
+	Type  string `json:"type"  validate:"required" example:"switch"`
+	Key   string `json:"key"   validate:"required" example:"modem"`
+	Value string `json:"value" validate:"required" example:"on"`
+}

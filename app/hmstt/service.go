@@ -9,6 +9,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+var ErrStateAlreadyExists = errors.New("STATE ALREADY EXISTS")
+
 var hmsttStateChangesTotal = promauto.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "hmstt_state_changes_total",
@@ -60,6 +62,36 @@ func (s *HmsttService) GetAllStates(ctx context.Context) ([]StateEntry, error) {
 		return nil, errors.New("GET ALL STATES ERROR")
 	}
 	return results, nil
+}
+
+func (s *HmsttService) CreateState(ctx context.Context, tipe, key, value string) error {
+	l := zerolog.Ctx(ctx)
+	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("hmstt_type", tipe).Str("hmstt_key", key).Str("hmstt_value", value)
+	})
+	l.Info().Msg("Handling CreateState service")
+
+	if !canTypeChangedWithKey(tipe, key, value) {
+		l.Error().Msg("CreateState: invalid type or key")
+		return errors.New("INVALID TYPE OR KEY")
+	}
+
+	if _, err := s.store.GetState(ctx, tipe, key); err == nil {
+		return ErrStateAlreadyExists
+	}
+
+	if err := s.store.SetState(ctx, tipe, key, value); err != nil {
+		l.Error().Err(err).Msg("CreateState failed")
+		return errors.New("SET STATE ERROR")
+	}
+	hmsttStateChangesTotal.WithLabelValues(tipe).Inc()
+
+	generatedKey := PREFIX_HMSTT + KEY_DELIMITER + tipe + KEY_DELIMITER + key
+	if err := s.event.StateChange(ctx, generatedKey, value); err != nil {
+		l.Error().Err(err).Msg("StateChange event failed")
+	}
+
+	return nil
 }
 
 func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) error {
