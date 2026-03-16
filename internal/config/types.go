@@ -85,6 +85,7 @@ type OTel struct {
 
 type Config struct {
 	HTTP           TCPServer `yaml:"http"`
+	MCP            TCPServer `yaml:"mcp"`
 	Log            Logging   `yaml:"log"`
 	Redis          Redis     `yaml:"redis"`
 	MQTT           MQTT      `yaml:"mqtt"`

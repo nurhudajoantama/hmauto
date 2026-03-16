@@ -115,9 +115,19 @@ func main() {
 	apikeyService := hmapikey.NewService(keyStore)
 	hmapikey.RegisterHandlers(srv, apikeyService)
 
+	// MCP server
+	mcpSrv := server.NewMCPServer(cfg.MCP.Addr(), &server.MCPServerConfig{
+		KeyStore:   keyStore,
+		EnableAuth: cfg.Security.EnableAuth,
+	})
+	hmstt.RegisterMCPTools(mcpSrv.GetServer(), hmsttService)
+
 	errgrp, ctx := errgroup.WithContext(ctx)
 	errgrp.Go(func() error {
 		return srv.Start(ctx)
+	})
+	errgrp.Go(func() error {
+		return mcpSrv.Start(ctx)
 	})
 
 	if err := errgrp.Wait(); err != nil {
@@ -130,6 +140,9 @@ func main() {
 
 	if err := srv.Shutdown(closeCtx); err != nil {
 		log.Error().Err(err).Msg("failed to shutdown http server")
+	}
+	if err := mcpSrv.Shutdown(closeCtx); err != nil {
+		log.Error().Err(err).Msg("failed to shutdown mcp server")
 	}
 	rabbitmq.Close(closeCtx, rabbitMQConn)
 	internalredis.Close(closeCtx, rdb)
