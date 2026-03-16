@@ -1,11 +1,11 @@
 package hmstt
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/gorilla/mux"
 	"github.com/nurhudajoantama/hmauto/app/server"
+	"github.com/nurhudajoantama/hmauto/internal/request"
 	"github.com/nurhudajoantama/hmauto/internal/response"
 	"github.com/rs/zerolog"
 )
@@ -24,7 +24,7 @@ type StateResponse struct {
 
 // SetStateRequest is the request body for setting a state value.
 type SetStateRequest struct {
-	Value string `json:"value" example:"on"`
+	Value string `json:"value" validate:"required" example:"on"`
 }
 
 func entryToResponse(e StateEntry) StateResponse {
@@ -183,13 +183,9 @@ func (h *HmsttHandler) setState(w http.ResponseWriter, r *http.Request) {
 	l.Info().Msg("Handling setState request")
 
 	var body SetStateRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		l.Error().Err(err).Msg("setState: failed to decode body")
-		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body", err)
-		return
-	}
-	if body.Value == "" {
-		response.ErrorResponse(w, http.StatusBadRequest, "value is required", nil)
+	if err := request.DecodeAndValidate(r, &body); err != nil {
+		l.Error().Err(err).Msg("setState: validation failed")
+		response.ErrorResponse(w, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 

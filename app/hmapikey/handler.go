@@ -1,7 +1,6 @@
 package hmapikey
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -9,13 +8,14 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/nurhudajoantama/hmauto/app/server"
 	"github.com/nurhudajoantama/hmauto/internal/apikey"
+	"github.com/nurhudajoantama/hmauto/internal/request"
 	"github.com/nurhudajoantama/hmauto/internal/response"
 	"github.com/rs/zerolog"
 )
 
 // CreateKeyRequest is the request body for creating an API key.
 type CreateKeyRequest struct {
-	Label string `json:"label" example:"iot-device-1"`
+	Label string `json:"label" validate:"required,max=100" example:"iot-device-1"`
 }
 
 // CreateKeyResponse is returned once on key creation. The key is never shown again.
@@ -86,13 +86,9 @@ func (h *Handler) createKey(w http.ResponseWriter, r *http.Request) {
 	l.Info().Msg("Handling createKey request")
 
 	var body CreateKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		l.Error().Err(err).Msg("createKey: failed to decode body")
-		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body", err)
-		return
-	}
-	if body.Label == "" {
-		response.ErrorResponse(w, http.StatusBadRequest, "label is required", errors.New("label is required"))
+	if err := request.DecodeAndValidate(r, &body); err != nil {
+		l.Error().Err(err).Msg("createKey: validation failed")
+		response.ErrorResponse(w, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 
