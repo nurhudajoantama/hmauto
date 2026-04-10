@@ -6,7 +6,7 @@ bin/
 
 .vscode/
 
-conf/
+conf/conf.yaml
 
 kv/
 hmstt-linux

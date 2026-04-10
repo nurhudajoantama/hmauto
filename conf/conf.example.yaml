@@ -1,0 +1,44 @@
+redisKeyPrefix: "hmauto"
+
+http:
+  host: "0.0.0.0"
+  port: "8080"
+
+mcp:
+  host: "127.0.0.1"
+  port: "8081"
+
+log:
+  level: "info"
+  type: "console"
+  logFileEnabled: false
+  logFilePath: "logs/app.log"
+
+redis:
+  host: "127.0.0.1"
+  port: "6379"
+  password: ""
+  db: 0
+
+mqtt:
+  user: "guest"
+  password: "guest"
+  host: "127.0.0.1"
+  port: "5672"
+
+security:
+  bearerToken: "replace-with-a-long-random-http-token"
+  mcpToken: "replace-with-a-different-long-random-mcp-token"
+  maxRequestSize: 1048576
+  rateLimitPerMin: 60
+  rateLimitBurst: 10
+
+otel:
+  endpoint: "127.0.0.1:4317"
+  serviceName: "hmauto"
+  enabled: false
+
+sentry:
+  dsn: ""
+  environment: "production"
+  sampleRate: 0.1
