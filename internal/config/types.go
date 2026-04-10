@@ -44,9 +44,20 @@ func (m MQTT) BrokerURL() string {
 
 type Security struct {
 	BearerToken     string `yaml:"bearerToken"`
+	MCPToken        string `yaml:"mcpToken"`
 	MaxRequestSize  int64  `yaml:"maxRequestSize"`  // in bytes
 	RateLimitPerMin int    `yaml:"rateLimitPerMin"` // requests per minute
 	RateLimitBurst  int    `yaml:"rateLimitBurst"`  // max burst size
+}
+
+func (s Security) ValidateAuthTokens() error {
+	if s.BearerToken == "" {
+		return fmt.Errorf("security.bearerToken must be set")
+	}
+	if s.MCPToken == "" {
+		return fmt.Errorf("security.mcpToken must be set")
+	}
+	return nil
 }
 
 func (s Security) GetMaxRequestSize() int64 {

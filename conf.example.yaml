@@ -35,6 +35,7 @@ mqtt:
 security:
   # Generate: openssl rand -hex 32
   bearerToken: "your-long-random-token-here-change-this-in-production"
+  mcpToken: "your-separate-mcp-token-here-change-this-in-production"
 
   # Maximum request body size in bytes (1MB = 1048576)
   maxRequestSize: 1048576
