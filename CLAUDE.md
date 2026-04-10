@@ -22,7 +22,8 @@ Home automation backend in Go. IoT state management via Redis + RabbitMQ event b
 - HTTP handlers return JSON always via `internal/response`.
 - Zerolog context logger via `zerolog.Ctx(ctx)` — propagate ctx everywhere.
 - All endpoints require auth unless explicitly public (health, metrics, healthz, hello).
-- Protected routes validate `Authorization: Bearer {token}` against config `Security.BearerToken`.
+- `/v1/*` routes validate `Authorization: Bearer {token}` against config `Security.BearerToken`.
+- `/mcp` validates `?token={token}` against config `Security.MCPToken`.
 - State key schema: `HSET hmstt:{type} {k} {json}`.
 - No `log.Fatal` outside `main.go`.
 
@@ -34,7 +35,7 @@ Home automation backend in Go. IoT state management via Redis + RabbitMQ event b
 - `app/hmstt/store.go` — Redis state store
 - `app/hmstt/event.go` — RabbitMQ topic publisher for state changes
 - `app/hmstt/util.go` — type/value validation (`canTypeChangedWithKey`)
-- `internal/middleware/auth.go` — `BearerTokenAuth` (config)
+- `internal/middleware/auth.go` — `BearerTokenAuth` for `/v1/*` and `QueryTokenAuth` for `/mcp`
 
 ## Dependency overview
 
