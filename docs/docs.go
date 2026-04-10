@@ -15,182 +15,11 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/admin/apikeys": {
-            "get": {
-                "security": [
-                    {
-                        "AdminKeyAuth": []
-                    }
-                ],
-                "description": "Returns metadata for all active API keys. The full key value is never returned.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "admin"
-                ],
-                "summary": "List API keys",
-                "responses": {
-                    "200": {
-                        "description": "List of API key metadata",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/response.JsonResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/definitions/apikey.KeyMetadata"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/response.JsonResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/response.JsonResponse"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "AdminKeyAuth": []
-                    }
-                ],
-                "description": "Creates a new API key. The full key is returned only in this response — store it securely.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Create an API key",
-                "parameters": [
-                    {
-                        "description": "Key label",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/hmapikey.CreateKeyRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created key (shown once)",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/response.JsonResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/hmapikey.CreateKeyResponse"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "Validation error",
-                        "schema": {
-                            "$ref": "#/definitions/response.JsonResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/response.JsonResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/response.JsonResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/admin/apikeys/{key}": {
-            "delete": {
-                "security": [
-                    {
-                        "AdminKeyAuth": []
-                    }
-                ],
-                "description": "Permanently revokes an API key by its full key value",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Revoke an API key",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Full API key to revoke",
-                        "name": "key",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Key revoked",
-                        "schema": {
-                            "$ref": "#/definitions/response.JsonResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/response.JsonResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Key not found",
-                        "schema": {
-                            "$ref": "#/definitions/response.JsonResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/response.JsonResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/alerts": {
             "post": {
                 "security": [
                     {
-                        "ApiKeyAuth": []
+                        "BearerAuth": []
                     }
                 ],
                 "description": "Publishes a single alert to the alert pipeline (RabbitMQ → Discord)",
@@ -247,7 +76,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "ApiKeyAuth": []
+                        "BearerAuth": []
                     }
                 ],
                 "description": "Publishes up to 100 alerts concurrently to the alert pipeline",
@@ -307,7 +136,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "ApiKeyAuth": []
+                        "BearerAuth": []
                     }
                 ],
                 "description": "Returns all states across every type",
@@ -359,7 +188,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "ApiKeyAuth": []
+                        "BearerAuth": []
                     }
                 ],
                 "description": "Returns all states for a given type (e.g. switch)",
@@ -427,7 +256,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "ApiKeyAuth": []
+                        "BearerAuth": []
                     }
                 ],
                 "description": "Returns the state for a specific type and key",
@@ -492,7 +321,7 @@ const docTemplate = `{
             "put": {
                 "security": [
                     {
-                        "ApiKeyAuth": []
+                        "BearerAuth": []
                     }
                 ],
                 "description": "Creates or updates the state for a specific type and key. Valid types: switch (values: on, off)",
@@ -575,23 +404,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "apikey.KeyMetadata": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "key_hint": {
-                    "type": "string"
-                },
-                "label": {
-                    "type": "string"
-                },
-                "last_used": {
-                    "type": "string"
-                }
-            }
-        },
         "hmalert.PublishAlertRequest": {
             "type": "object",
             "properties": {
@@ -606,31 +418,6 @@ const docTemplate = `{
                 "type": {
                     "type": "string",
                     "example": "internet"
-                }
-            }
-        },
-        "hmapikey.CreateKeyRequest": {
-            "type": "object",
-            "properties": {
-                "label": {
-                    "type": "string",
-                    "example": "iot-device-1"
-                }
-            }
-        },
-        "hmapikey.CreateKeyResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "key": {
-                    "type": "string",
-                    "example": "a1b2c3d4e5f6..."
-                },
-                "label": {
-                    "type": "string",
-                    "example": "iot-device-1"
                 }
             }
         },
@@ -676,14 +463,8 @@ const docTemplate = `{
         }
     },
     "securityDefinitions": {
-        "AdminKeyAuth": {
-            "description": "Format: Bearer {admin-key}",
-            "type": "apiKey",
-            "name": "Authorization",
-            "in": "header"
-        },
-        "ApiKeyAuth": {
-            "description": "Format: Bearer {api-key}",
+        "BearerAuth": {
+            "description": "Format: Bearer {token}",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"

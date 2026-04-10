@@ -6,7 +6,7 @@ Home automation backend in Go. IoT state management with Redis storage and Rabbi
 
 - **State Management**: Track and update state for home automation components (switches, etc.)
 - **Event Publishing**: State changes published to RabbitMQ `amq.topic` for external subscribers
-- **API Key Auth**: Redis-backed API key management with admin API
+- **Bearer Token Auth**: Single config-based bearer token for protected HTTP and MCP access
 - **Health Monitoring**: Health checks for Redis and RabbitMQ dependencies
 - **Observability**: Structured zerolog, OpenTelemetry tracing, Prometheus metrics, Sentry error tracking
 
@@ -44,22 +44,18 @@ CONFIG_PATH=/path/to/config.yaml ./hmauto
 - `GET /live` - Liveness probe
 - `GET /metrics` - Prometheus scrape endpoint
 
-### Protected (API key required)
+### Protected (bearer token required)
 
 ```bash
-curl -H "Authorization: Bearer <api-key>" http://localhost:8080/v1/states
+curl -H "Authorization: Bearer <token>" http://localhost:8080/v1/states
 ```
 
 - `GET /v1/states` - All states
 - `GET /v1/states/{type}` - States by type
 - `GET /v1/states/{type}/{key}` - Single state
 - `PUT /v1/states/{type}/{key}` - Set state value
-
-### Admin (admin key from config)
-
-- `GET /admin/apikeys` - List API keys
-- `POST /admin/apikeys` - Create API key
-- `DELETE /admin/apikeys/{key}` - Revoke API key
+- `PATCH /v1/states/{type}/{key}` - Partially update state value/description
+- `POST /mcp` - MCP endpoint using the same bearer token
 
 See [docs/api-design.md](docs/api-design.md) for full API reference.
 

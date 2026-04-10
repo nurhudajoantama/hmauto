@@ -1,16 +1,5 @@
 basePath: /v1
 definitions:
-  apikey.KeyMetadata:
-    properties:
-      created_at:
-        type: string
-      key_hint:
-        type: string
-      label:
-        type: string
-      last_used:
-        type: string
-    type: object
   hmalert.PublishAlertRequest:
     properties:
       level:
@@ -21,23 +10,6 @@ definitions:
         type: string
       type:
         example: internet
-        type: string
-    type: object
-  hmapikey.CreateKeyRequest:
-    properties:
-      label:
-        example: iot-device-1
-        type: string
-    type: object
-  hmapikey.CreateKeyResponse:
-    properties:
-      created_at:
-        type: string
-      key:
-        example: a1b2c3d4e5f6...
-        type: string
-      label:
-        example: iot-device-1
         type: string
     type: object
   hmstt.SetStateRequest:
@@ -76,111 +48,6 @@ info:
   title: hmauto API
   version: "1.0"
 paths:
-  /admin/apikeys:
-    get:
-      description: Returns metadata for all active API keys. The full key value is
-        never returned.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: List of API key metadata
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.JsonResponse'
-            - properties:
-                data:
-                  items:
-                    $ref: '#/definitions/apikey.KeyMetadata'
-                  type: array
-              type: object
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/response.JsonResponse'
-        "500":
-          description: Internal error
-          schema:
-            $ref: '#/definitions/response.JsonResponse'
-      security:
-      - AdminKeyAuth: []
-      summary: List API keys
-      tags:
-      - admin
-    post:
-      consumes:
-      - application/json
-      description: Creates a new API key. The full key is returned only in this response
-        — store it securely.
-      parameters:
-      - description: Key label
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/hmapikey.CreateKeyRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created key (shown once)
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.JsonResponse'
-            - properties:
-                data:
-                  $ref: '#/definitions/hmapikey.CreateKeyResponse'
-              type: object
-        "400":
-          description: Validation error
-          schema:
-            $ref: '#/definitions/response.JsonResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/response.JsonResponse'
-        "500":
-          description: Internal error
-          schema:
-            $ref: '#/definitions/response.JsonResponse'
-      security:
-      - AdminKeyAuth: []
-      summary: Create an API key
-      tags:
-      - admin
-  /admin/apikeys/{key}:
-    delete:
-      description: Permanently revokes an API key by its full key value
-      parameters:
-      - description: Full API key to revoke
-        in: path
-        name: key
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Key revoked
-          schema:
-            $ref: '#/definitions/response.JsonResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/response.JsonResponse'
-        "404":
-          description: Key not found
-          schema:
-            $ref: '#/definitions/response.JsonResponse'
-        "500":
-          description: Internal error
-          schema:
-            $ref: '#/definitions/response.JsonResponse'
-      security:
-      - AdminKeyAuth: []
-      summary: Revoke an API key
-      tags:
-      - admin
   /alerts:
     post:
       consumes:
@@ -213,7 +80,7 @@ paths:
           schema:
             $ref: '#/definitions/response.JsonResponse'
       security:
-      - ApiKeyAuth: []
+      - BearerAuth: []
       summary: Publish an alert
       tags:
       - alerts
@@ -251,7 +118,7 @@ paths:
           schema:
             $ref: '#/definitions/response.JsonResponse'
       security:
-      - ApiKeyAuth: []
+      - BearerAuth: []
       summary: Publish alerts in batch
       tags:
       - alerts
@@ -281,7 +148,7 @@ paths:
           schema:
             $ref: '#/definitions/response.JsonResponse'
       security:
-      - ApiKeyAuth: []
+      - BearerAuth: []
       summary: List all states
       tags:
       - states
@@ -322,7 +189,7 @@ paths:
           schema:
             $ref: '#/definitions/response.JsonResponse'
       security:
-      - ApiKeyAuth: []
+      - BearerAuth: []
       summary: List states by type
       tags:
       - states
@@ -363,7 +230,7 @@ paths:
           schema:
             $ref: '#/definitions/response.JsonResponse'
       security:
-      - ApiKeyAuth: []
+      - BearerAuth: []
       summary: Get a single state
       tags:
       - states
@@ -416,7 +283,7 @@ paths:
           schema:
             $ref: '#/definitions/response.JsonResponse'
       security:
-      - ApiKeyAuth: []
+      - BearerAuth: []
       summary: Set a state value
       tags:
       - states
@@ -424,13 +291,8 @@ schemes:
 - http
 - https
 securityDefinitions:
-  AdminKeyAuth:
-    description: 'Format: Bearer {admin-key}'
-    in: header
-    name: Authorization
-    type: apiKey
-  ApiKeyAuth:
-    description: 'Format: Bearer {api-key}'
+  BearerAuth:
+    description: 'Format: Bearer {token}'
     in: header
     name: Authorization
     type: apiKey

@@ -16,20 +16,12 @@ Use `internal/response.SuccessResponse` and `internal/response.ErrorResponse`.
 
 ## Authentication
 
-### Regular API keys (protected routes)
+### Bearer token (protected routes)
 
-- Header: `Authorization: Bearer {key}`
-- Validated via Redis: `GET apikey:{key}` — non-nil = valid
-- On success: `last_used` updated asynchronously
+- Header: `Authorization: Bearer {token}`
+- Validated against `config.Security.BearerToken`
 - On failure: `401 {"success":false,"error":"Unauthorized"}`
-- Applied to: `/v1/states/*`
-
-### Admin key (admin routes)
-
-- Same header format: `Authorization: Bearer {admin_key}`
-- Validated against `config.Security.AdminKey` only — no Redis lookup
-- Applied to: `/admin/*`
-- Admin key must not be stored in or validated via Redis
+- Applied to: `/v1/states/*` and `/mcp`
 
 ## Public endpoints
 
@@ -66,21 +58,10 @@ PUT /v1/states/{type}/{key}
 Currently valid type+value combinations (enforced in `canTypeChangedWithKey`):
 - type `switch`, values: `on` | `off`
 
-## Admin — API key management
+## MCP endpoint
 
 ```
-GET /admin/apikeys
-  → 200 {"success":true,"data":[{"key_hint":"abcd...efgh","label":"iot-1","created_at":"...","last_used":"..."},...]}
-  Note: key_hint = first 4 chars + "..." + last 4 chars; full key never returned in list
-
-POST /admin/apikeys
-  Body: {"label":"my-device"}
-  → 201 {"success":true,"data":{"key":"<full 64-char hex key, returned only once>","label":"my-device","created_at":"..."}}
-  → 400 if label is empty
-
-DELETE /admin/apikeys/{key}
-  → 200 {"success":true,"data":null}
-  → 404 {"success":false,"error":"api key not found"} if key doesn't exist
+POST /mcp
+  → MCP streamable HTTP endpoint
+  → same Authorization header and bearer token as /v1/* routes
 ```
-
-Key generation: `crypto/rand` 32 bytes → hex (64-char string). Implemented in `internal/apikey.RedisStore.CreateKey`.

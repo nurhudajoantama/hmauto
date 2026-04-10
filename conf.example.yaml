@@ -33,12 +33,8 @@ mqtt:
 
 # Security configuration
 security:
-  # Master admin key for /admin/* endpoints (config only, never stored in Redis)
   # Generate: openssl rand -hex 32
-  adminKey: "your-admin-key-here-change-this-in-production"
-
-  # Enable API key authentication (recommended for production)
-  enableAuth: true
+  bearerToken: "your-long-random-token-here-change-this-in-production"
 
   # Maximum request body size in bytes (1MB = 1048576)
   maxRequestSize: 1048576

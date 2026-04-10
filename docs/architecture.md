@@ -32,10 +32,7 @@
 [sentryhttp wraps otelhttp — panics captured here]
 
 [/v1/states/* subrouter]
-  + APIKeyAuth             — Bearer token → Redis GET apikey:{key}
-
-[/admin/* subrouter]
-  + AdminKeyAuth           — Bearer token == config.Security.AdminKey (no Redis)
+  + BearerTokenAuth        — Bearer token == config.Security.BearerToken
 ```
 
 ## Routes
@@ -48,16 +45,14 @@ Public (no auth):
   GET  /live               → 200 liveness probe
   GET  /metrics            → Prometheus scrape endpoint
 
-Protected (API key from Redis):
+Protected (config bearer token):
   GET  /v1/states                → all states (all types)
+  POST /v1/states                → create state
   GET  /v1/states/{type}         → all states for one type
   GET  /v1/states/{type}/{key}   → single state entry
   PUT  /v1/states/{type}/{key}   → set state value
-
-Admin (master key from config):
-  GET    /admin/apikeys          → list keys (key_hint + metadata)
-  POST   /admin/apikeys          → create key (full key returned once)
-  DELETE /admin/apikeys/{key}    → revoke key (404 if not found)
+  PATCH /v1/states/{type}/{key}  → patch state value/description
+  POST /mcp                      → MCP streamable HTTP endpoint
 ```
 
 ## Redis key schema
@@ -68,16 +63,6 @@ State storage:
   Key      : hmstt:{type}          e.g. hmstt:switch
   Field    : {k}                   e.g. modem_switch
   Value    : JSON {"value":"on","updated_at":"..."}
-
-API keys:
-  Key type : String
-  Key      : apikey:{key_value}
-  Value    : JSON {"label":"...","created_at":"...","last_used":"..."}
-
-  Index:
-  Key type : Set
-  Key      : apikeys:index
-  Members  : all active key values
 ```
 
 ## RabbitMQ events
@@ -92,15 +77,13 @@ sentry.Init
 instrumentation.InitializeLogger (zerolog)
 instrumentation.SetupOTelSDK (OTEL)
   ↓
-redis.NewClient        ← state + apikey storage
+redis.NewClient        ← state storage
 rabbitmq.NewRabbitMQConn
-apikey.NewRedisStore(rdb)
   ↓
 server.NewWithConfig   ← middleware chain assembled here
 health.NewHealthChecker(rdb, mq) → /health, /ready, /live
   ↓
 hmstt:   NewStore(rdb) + NewEvent + NewService + RegisterHandlers
-hmapikey: NewService + RegisterHandlers  ← admin routes
   ↓
 errgrp.Wait → graceful shutdown (5s timeout)
 Close: http server, rabbitmq, redis, otel, logger

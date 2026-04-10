@@ -2,15 +2,13 @@
 
 ## Features
 
-### API Key Authentication
+### Bearer Token Authentication
 
-All `/v1/*` endpoints require a Bearer token validated against Redis.
+All `/v1/*` endpoints and `/mcp` require a Bearer token validated against `config.Security.BearerToken`.
 
 ```bash
-curl -H "Authorization: Bearer <api-key>" http://localhost:8080/v1/states
+curl -H "Authorization: Bearer <token>" http://localhost:8080/v1/states
 ```
-
-Admin endpoints (`/admin/*`) use a separate master key from config — never stored in Redis.
 
 **Key generation:** `openssl rand -hex 32`
 
@@ -37,8 +35,7 @@ Applied to all responses: `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Pr
 
 ## Production Checklist
 
-- [ ] `security.enableAuth: true`
-- [ ] Strong admin key (`openssl rand -hex 32`)
+- [ ] Strong `security.bearerToken` (`openssl rand -hex 32`)
 - [ ] Appropriate rate limits
 - [ ] Sentry DSN configured for error tracking
 - [ ] OTEL endpoint configured for tracing
@@ -52,7 +49,7 @@ Applied to all responses: `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Pr
 curl http://localhost:8080/v1/states
 
 # Should succeed
-curl -H "Authorization: Bearer <key>" http://localhost:8080/v1/states
+curl -H "Authorization: Bearer <token>" http://localhost:8080/v1/states
 ```
 
 ## Support

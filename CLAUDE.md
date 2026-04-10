@@ -7,11 +7,9 @@ Home automation backend in Go. IoT state management via Redis + RabbitMQ event b
 | Package | Role |
 |---|---|
 | `app/hmstt` | State store (type+key → value). Redis Hash per type. Publishes state changes to RabbitMQ. |
-| `app/hmapikey` | Admin API for API key create/revoke/list |
 | `app/server` | gorilla/mux HTTP server, middleware wiring |
-| `internal/apikey` | Redis-backed API key store (create/validate/revoke/list) |
 | `internal/redis` | Redis client init and close |
-| `internal/middleware` | Auth (API key + admin), rate limit, security headers, Prometheus, trace ID |
+| `internal/middleware` | Auth (config bearer token), rate limit, security headers, Prometheus, trace ID |
 | `internal/instrumentation` | zerolog + OpenTelemetry (OTLP) |
 | `internal/rabbitmq` | RabbitMQ AMQP connection |
 | `internal/health` | Health check handlers (Redis + RabbitMQ) |
@@ -24,8 +22,7 @@ Home automation backend in Go. IoT state management via Redis + RabbitMQ event b
 - HTTP handlers return JSON always via `internal/response`.
 - Zerolog context logger via `zerolog.Ctx(ctx)` — propagate ctx everywhere.
 - All endpoints require auth unless explicitly public (health, metrics, healthz, hello).
-- Admin routes (`/admin/*`) use config `AdminKey` only — never Redis.
-- Regular API keys validated from Redis: `GET apikey:{key}`.
+- Protected routes validate `Authorization: Bearer {token}` against config `Security.BearerToken`.
 - State key schema: `HSET hmstt:{type} {k} {json}`.
 - No `log.Fatal` outside `main.go`.
 
@@ -37,27 +34,22 @@ Home automation backend in Go. IoT state management via Redis + RabbitMQ event b
 - `app/hmstt/store.go` — Redis state store
 - `app/hmstt/event.go` — RabbitMQ topic publisher for state changes
 - `app/hmstt/util.go` — type/value validation (`canTypeChangedWithKey`)
-- `internal/apikey/store.go` — API key CRUD + `ErrKeyNotFound` sentinel
-- `internal/middleware/auth.go` — `APIKeyAuth` (Redis) + `AdminKeyAuth` (config)
+- `internal/middleware/auth.go` — `BearerTokenAuth` (config)
 
 ## Dependency overview
 
 ```
-Redis (state + apikeys)   RabbitMQ (amq.topic event bus)
+Redis (state)             RabbitMQ (amq.topic event bus)
       ↕                         ↕
    hmstt ──────state change event──────→ (external subscribers)
       ↕
    HTTP server (gorilla/mux + middleware chain)
-         ↕
-   /admin/* (hmapikey)
 ```
 
 ## What NOT to do
 
 - Do not add GORM or any SQL dependency.
 - Do not return HTML from any endpoint.
-- Do not store or validate admin key in Redis — config only.
+- Do not store or validate auth tokens in Redis.
 - Do not skip zerolog context propagation in new handlers/services.
 - Do not use `log.Fatal` outside of `main.go`.
-- Do not use `math/rand` for key generation — always `crypto/rand`.
-- Do not return the full API key value except in `POST /admin/apikeys` response.
