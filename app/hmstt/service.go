@@ -10,6 +10,8 @@ import (
 )
 
 var ErrStateAlreadyExists = errors.New("STATE ALREADY EXISTS")
+var ErrStateNotFound = errors.New("STATE NOT FOUND")
+var ErrNothingToUpdate = errors.New("NOTHING TO UPDATE")
 
 var hmsttStateChangesTotal = promauto.NewCounterVec(
 	prometheus.CounterOpts{
@@ -64,10 +66,10 @@ func (s *HmsttService) GetAllStates(ctx context.Context) ([]StateEntry, error) {
 	return results, nil
 }
 
-func (s *HmsttService) CreateState(ctx context.Context, tipe, key, value string) error {
+func (s *HmsttService) CreateState(ctx context.Context, tipe, key, value, description string) error {
 	l := zerolog.Ctx(ctx)
 	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
-		return c.Str("hmstt_type", tipe).Str("hmstt_key", key).Str("hmstt_value", value)
+		return c.Str("hmstt_type", tipe).Str("hmstt_key", key).Str("hmstt_value", value).Str("hmstt_description", description)
 	})
 	l.Info().Msg("Handling CreateState service")
 
@@ -80,7 +82,7 @@ func (s *HmsttService) CreateState(ctx context.Context, tipe, key, value string)
 		return ErrStateAlreadyExists
 	}
 
-	if err := s.store.SetState(ctx, tipe, key, value); err != nil {
+	if err := s.store.SetState(ctx, tipe, key, value, description); err != nil {
 		l.Error().Err(err).Msg("CreateState failed")
 		return errors.New("SET STATE ERROR")
 	}
@@ -94,7 +96,10 @@ func (s *HmsttService) CreateState(ctx context.Context, tipe, key, value string)
 	return nil
 }
 
-func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) error {
+// SetState updates the value of an existing state entry (creates if not exists).
+// If description is nil, the existing description is preserved.
+// MQTT event is fired only when the value actually changes.
+func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string, description *string) error {
 	l := zerolog.Ctx(ctx)
 	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
 		return c.Str("hmstt_type", tipe).Str("hmstt_key", key).Str("hmstt_value", value)
@@ -106,15 +111,89 @@ func (s *HmsttService) SetState(ctx context.Context, tipe, key, value string) er
 		return errors.New("INVALID TYPE OR KEY")
 	}
 
-	if err := s.store.SetState(ctx, tipe, key, value); err != nil {
+	current, err := s.store.GetState(ctx, tipe, key)
+	valueChanged := err != nil || current.Value != value
+
+	desc := current.Description
+	if description != nil {
+		desc = *description
+		l.UpdateContext(func(c zerolog.Context) zerolog.Context {
+			return c.Str("hmstt_description", desc)
+		})
+	}
+
+	if err := s.store.SetState(ctx, tipe, key, value, desc); err != nil {
 		l.Error().Err(err).Msg("SetState failed")
 		return errors.New("SET STATE ERROR")
 	}
-	hmsttStateChangesTotal.WithLabelValues(tipe).Inc()
 
-	generatedKey := PREFIX_HMSTT + KEY_DELIMITER + tipe + KEY_DELIMITER + key
-	if err := s.event.StateChange(ctx, generatedKey, value); err != nil {
-		l.Error().Err(err).Msg("StateChange event failed")
+	if valueChanged {
+		hmsttStateChangesTotal.WithLabelValues(tipe).Inc()
+		generatedKey := PREFIX_HMSTT + KEY_DELIMITER + tipe + KEY_DELIMITER + key
+		if err := s.event.StateChange(ctx, generatedKey, value); err != nil {
+			l.Error().Err(err).Msg("StateChange event failed")
+		}
+	}
+
+	return nil
+}
+
+// PatchState partially updates value and/or description of an existing state entry.
+// At least one of value or description must be non-nil.
+// MQTT event is fired only when the value actually changes.
+func (s *HmsttService) PatchState(ctx context.Context, tipe, key string, value *string, description *string) error {
+	l := zerolog.Ctx(ctx)
+	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("hmstt_type", tipe).Str("hmstt_key", key)
+	})
+	l.Info().Msg("Handling PatchState service")
+
+	if value == nil && description == nil {
+		return ErrNothingToUpdate
+	}
+
+	current, err := s.store.GetState(ctx, tipe, key)
+	if err != nil {
+		l.Error().Err(err).Msg("PatchState: state not found")
+		return ErrStateNotFound
+	}
+
+	newValue := current.Value
+	newDesc := current.Description
+	valueChanged := false
+
+	if value != nil {
+		if !canTypeChangedWithKey(tipe, key, *value) {
+			l.Error().Msg("PatchState: invalid type or key")
+			return errors.New("INVALID TYPE OR KEY")
+		}
+		if current.Value != *value {
+			valueChanged = true
+			newValue = *value
+		}
+		l.UpdateContext(func(c zerolog.Context) zerolog.Context {
+			return c.Str("hmstt_value", newValue)
+		})
+	}
+
+	if description != nil {
+		newDesc = *description
+		l.UpdateContext(func(c zerolog.Context) zerolog.Context {
+			return c.Str("hmstt_description", newDesc)
+		})
+	}
+
+	if err := s.store.SetState(ctx, tipe, key, newValue, newDesc); err != nil {
+		l.Error().Err(err).Msg("PatchState failed")
+		return errors.New("SET STATE ERROR")
+	}
+
+	if valueChanged {
+		hmsttStateChangesTotal.WithLabelValues(tipe).Inc()
+		generatedKey := PREFIX_HMSTT + KEY_DELIMITER + tipe + KEY_DELIMITER + key
+		if err := s.event.StateChange(ctx, generatedKey, newValue); err != nil {
+			l.Error().Err(err).Msg("StateChange event failed")
+		}
 	}
 
 	return nil

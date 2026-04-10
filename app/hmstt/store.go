@@ -12,22 +12,24 @@ import (
 )
 
 type StateEntry struct {
-	Type      string
-	K         string
-	Value     string
-	UpdatedAt time.Time
+	Type        string
+	K           string
+	Value       string
+	Description string
+	UpdatedAt   time.Time
 }
 
 type StateStore interface {
 	GetState(ctx context.Context, tipe, k string) (StateEntry, error)
-	SetState(ctx context.Context, tipe, k, value string) error
+	SetState(ctx context.Context, tipe, k, value, description string) error
 	GetAllByType(ctx context.Context, tipe string) ([]StateEntry, error)
 	GetAll(ctx context.Context) ([]StateEntry, error)
 }
 
 type stateEntryJSON struct {
-	Value     string    `json:"value"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Value       string    `json:"value"`
+	Description string    `json:"description"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type HmsttStore struct {
@@ -51,13 +53,14 @@ func (s *HmsttStore) trimKeyPrefix(key string) string {
 	return strings.TrimPrefix(key, s.prefix+":hmstt:")
 }
 
-func (s *HmsttStore) SetState(ctx context.Context, tipe, k, value string) error {
+func (s *HmsttStore) SetState(ctx context.Context, tipe, k, value, description string) error {
 	ctx, span := otel.Tracer("hmstt").Start(ctx, "store.SetState")
 	defer span.End()
 
 	entry := stateEntryJSON{
-		Value:     value,
-		UpdatedAt: time.Now().UTC(),
+		Value:       value,
+		Description: description,
+		UpdatedAt:   time.Now().UTC(),
 	}
 	data, err := json.Marshal(entry)
 	if err != nil {
@@ -81,7 +84,7 @@ func (s *HmsttStore) GetState(ctx context.Context, tipe, k string) (StateEntry, 
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return StateEntry{}, fmt.Errorf("unmarshal state entry: %w", err)
 	}
-	return StateEntry{Type: tipe, K: k, Value: entry.Value, UpdatedAt: entry.UpdatedAt}, nil
+	return StateEntry{Type: tipe, K: k, Value: entry.Value, Description: entry.Description, UpdatedAt: entry.UpdatedAt}, nil
 }
 
 func (s *HmsttStore) GetAllByType(ctx context.Context, tipe string) ([]StateEntry, error) {
@@ -98,7 +101,7 @@ func (s *HmsttStore) GetAllByType(ctx context.Context, tipe string) ([]StateEntr
 		if err := json.Unmarshal([]byte(v), &entry); err != nil {
 			return nil, fmt.Errorf("unmarshal state entry for key %s: %w", k, err)
 		}
-		entries = append(entries, StateEntry{Type: tipe, K: k, Value: entry.Value, UpdatedAt: entry.UpdatedAt})
+		entries = append(entries, StateEntry{Type: tipe, K: k, Value: entry.Value, Description: entry.Description, UpdatedAt: entry.UpdatedAt})
 	}
 	return entries, nil
 }
