@@ -6,10 +6,10 @@ All endpoints return JSON. No HTML.
 
 ```json
 // success
-{"success": true, "data": {...}}
+{"message": "success", "data": {...}}
 
 // error
-{"success": false, "error": "message"}
+{"message": "message", "error": "details"}
 ```
 
 Use `internal/response.SuccessResponse` and `internal/response.ErrorResponse`.
@@ -55,6 +55,10 @@ GET /v1/states/{type}/{key}
   → 200 {"success":true,"data":{"type":"switch","key":"modem_switch","value":"on","updated_at":"..."}}
   → 404 {"success":false,"error":"state not found"}
 
+GET /v1/states/{type}/batch?key=server_1&key=server_2
+  → 200 {"message":"success","data":[{"type":"switch","key":"server_1","value":"on","description":"...","updated_at":"..."}]}
+  → 400 {"message":"at least one key query parameter is required"}
+
 PUT /v1/states/{type}/{key}
   Body: {"value":"on"}
   → 200 {"success":true,"data":{"type":"switch","key":"modem_switch","value":"on","updated_at":"..."}}
@@ -72,3 +76,5 @@ POST /mcp
   → MCP streamable HTTP endpoint
   → requires `?token={config.Security.MCPToken}`
 ```
+
+State changes are published to RabbitMQ by this repo. Any MQTT topic consumed by microcontrollers is expected to come from an external bridge or separate service.
