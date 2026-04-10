@@ -33,6 +33,9 @@
 
 [/v1/states/* subrouter]
   + BearerTokenAuth        — Bearer token == config.Security.BearerToken
+
+[/mcp]
+  + QueryTokenAuth         — query token == config.Security.MCPToken
 ```
 
 ## Routes
@@ -52,7 +55,9 @@ Protected (config bearer token):
   GET  /v1/states/{type}/{key}   → single state entry
   PUT  /v1/states/{type}/{key}   → set state value
   PATCH /v1/states/{type}/{key}  → patch state value/description
-  POST /mcp                      → MCP streamable HTTP endpoint
+
+Protected (config MCP query token):
+  POST /mcp?token=...            → MCP streamable HTTP endpoint
 ```
 
 ## Redis key schema

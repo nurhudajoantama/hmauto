@@ -6,7 +6,7 @@ Home automation backend in Go. IoT state management with Redis storage and Rabbi
 
 - **State Management**: Track and update state for home automation components (switches, etc.)
 - **Event Publishing**: State changes published to RabbitMQ `amq.topic` for external subscribers
-- **Bearer Token Auth**: Single config-based bearer token for protected HTTP and MCP access
+- **Token Auth**: Bearer token for `/v1/*` and separate query token for `/mcp`
 - **Health Monitoring**: Health checks for Redis and RabbitMQ dependencies
 - **Observability**: Structured zerolog, OpenTelemetry tracing, Prometheus metrics, Sentry error tracking
 
@@ -55,7 +55,14 @@ curl -H "Authorization: Bearer <token>" http://localhost:8080/v1/states
 - `GET /v1/states/{type}/{key}` - Single state
 - `PUT /v1/states/{type}/{key}` - Set state value
 - `PATCH /v1/states/{type}/{key}` - Partially update state value/description
-- `POST /mcp` - MCP endpoint using the same bearer token
+
+### MCP
+
+```bash
+curl -X POST "http://localhost:8081/mcp?token=<mcp-token>"
+```
+
+- `POST /mcp?token=...` - MCP endpoint using the separate MCP token
 
 See [docs/api-design.md](docs/api-design.md) for full API reference.
 

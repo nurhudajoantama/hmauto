@@ -21,7 +21,14 @@ Use `internal/response.SuccessResponse` and `internal/response.ErrorResponse`.
 - Header: `Authorization: Bearer {token}`
 - Validated against `config.Security.BearerToken`
 - On failure: `401 {"success":false,"error":"Unauthorized"}`
-- Applied to: `/v1/states/*` and `/mcp`
+- Applied to: `/v1/states/*`
+
+### MCP query token
+
+- Query parameter: `?token={token}`
+- Validated against `config.Security.MCPToken`
+- On failure: `401 {"success":false,"error":"Unauthorized"}`
+- Applied to: `/mcp`
 
 ## Public endpoints
 
@@ -63,5 +70,5 @@ Currently valid type+value combinations (enforced in `canTypeChangedWithKey`):
 ```
 POST /mcp
   → MCP streamable HTTP endpoint
-  → same Authorization header and bearer token as /v1/* routes
+  → requires `?token={config.Security.MCPToken}`
 ```

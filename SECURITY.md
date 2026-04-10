@@ -2,12 +2,20 @@
 
 ## Features
 
-### Bearer Token Authentication
+### HTTP Bearer Token Authentication
 
-All `/v1/*` endpoints and `/mcp` require a Bearer token validated against `config.Security.BearerToken`.
+All `/v1/*` endpoints require a Bearer token validated against `config.Security.BearerToken`.
 
 ```bash
 curl -H "Authorization: Bearer <token>" http://localhost:8080/v1/states
+```
+
+### MCP Query Token Authentication
+
+`/mcp` requires a query token validated against `config.Security.MCPToken`.
+
+```bash
+curl -X POST "http://localhost:8081/mcp?token=<mcp-token>"
 ```
 
 **Key generation:** `openssl rand -hex 32`
@@ -36,6 +44,7 @@ Applied to all responses: `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Pr
 ## Production Checklist
 
 - [ ] Strong `security.bearerToken` (`openssl rand -hex 32`)
+- [ ] Strong `security.mcpToken` (`openssl rand -hex 32`)
 - [ ] Appropriate rate limits
 - [ ] Sentry DSN configured for error tracking
 - [ ] OTEL endpoint configured for tracing
@@ -50,6 +59,12 @@ curl http://localhost:8080/v1/states
 
 # Should succeed
 curl -H "Authorization: Bearer <token>" http://localhost:8080/v1/states
+
+# Should return 401
+curl -X POST "http://localhost:8081/mcp"
+
+# Should succeed
+curl -X POST "http://localhost:8081/mcp?token=<mcp-token>"
 ```
 
 ## Support
