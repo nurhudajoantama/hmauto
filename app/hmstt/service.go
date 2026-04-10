@@ -66,6 +66,39 @@ func (s *HmsttService) GetAllStates(ctx context.Context) ([]StateEntry, error) {
 	return results, nil
 }
 
+func (s *HmsttService) GetStatesByKeys(ctx context.Context, tipe string, keys []string) ([]StateEntry, error) {
+	l := zerolog.Ctx(ctx)
+
+	if tipe == "" {
+		return nil, errors.New("INVALID TYPE")
+	}
+	if len(keys) == 0 {
+		return nil, errors.New("NO KEYS PROVIDED")
+	}
+
+	entries, err := s.store.GetAllByType(ctx, tipe)
+	if err != nil {
+		return nil, errors.New("GET ALL BY TYPE ERROR")
+	}
+
+	entryByKey := make(map[string]StateEntry, len(entries))
+	for _, entry := range entries {
+		entryByKey[entry.K] = entry
+	}
+
+	results := make([]StateEntry, 0, len(keys))
+	for _, key := range keys {
+		entry, ok := entryByKey[key]
+		if !ok {
+			l.Warn().Str("hmstt_type", tipe).Str("hmstt_key", key).Msg("batch sync key not found")
+			continue
+		}
+		results = append(results, entry)
+	}
+
+	return results, nil
+}
+
 func (s *HmsttService) CreateState(ctx context.Context, tipe, key, value, description string) error {
 	l := zerolog.Ctx(ctx)
 	l.UpdateContext(func(c zerolog.Context) zerolog.Context {

@@ -34,6 +34,7 @@ func RegisterHandlers(s *server.Server, svc *HmsttService) {
 	v1.HandleFunc("/states", h.listAllStates).Methods("GET")
 	v1.HandleFunc("/states", h.createState).Methods("POST")
 	v1.HandleFunc("/states/{type}", h.listStatesByType).Methods("GET")
+	v1.HandleFunc("/states/{type}/batch", h.getStatesByKeys).Methods("GET")
 	v1.HandleFunc("/states/{type}/{key}", h.getState).Methods("GET")
 	v1.HandleFunc("/states/{type}/{key}", h.setState).Methods("PUT")
 	v1.HandleFunc("/states/{type}/{key}", h.patchState).Methods("PATCH")
@@ -143,6 +144,37 @@ func (h *HmsttHandler) getState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.SuccessResponse(w, entryToResponse(entry))
+}
+
+func (h *HmsttHandler) getStatesByKeys(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l := zerolog.Ctx(ctx)
+	tipe := mux.Vars(r)["type"]
+	keys := r.URL.Query()["key"]
+
+	l.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("hmstt_type", tipe)
+	})
+	l.Info().Msg("Handling getStatesByKeys request")
+
+	if len(keys) == 0 {
+		response.ErrorResponse(w, http.StatusBadRequest, "at least one key query parameter is required", nil)
+		return
+	}
+
+	entries, err := h.service.GetStatesByKeys(ctx, tipe, keys)
+	if err != nil {
+		l.Error().Err(err).Msg("getStatesByKeys failed")
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to get states", err)
+		return
+	}
+
+	data := make([]StateResponse, 0, len(entries))
+	for _, entry := range entries {
+		data = append(data, entryToResponse(entry))
+	}
+
+	response.SuccessResponse(w, data)
 }
 
 // createState godoc
