@@ -8,15 +8,10 @@
 //	@BasePath	/v1
 //	@schemes	http https
 //
-//	@securityDefinitions.apikey	ApiKeyAuth
+//	@securityDefinitions.apikey	BearerAuth
 //	@in							header
 //	@name						Authorization
-//	@description				Format: Bearer {api-key}
-//
-//	@securityDefinitions.apikey	AdminKeyAuth
-//	@in							header
-//	@name						Authorization
-//	@description				Format: Bearer {admin-key}
+//	@description				Format: Bearer {token}
 package main
 
 import (
@@ -27,17 +22,15 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/nurhudajoantama/hmauto/app/hmapikey"
 	"github.com/nurhudajoantama/hmauto/app/hmstt"
 	"github.com/nurhudajoantama/hmauto/app/server"
-	"github.com/nurhudajoantama/hmauto/internal/apikey"
-	"github.com/nurhudajoantama/hmauto/internal/config"
 	_ "github.com/nurhudajoantama/hmauto/docs"
+	"github.com/nurhudajoantama/hmauto/internal/config"
 	"github.com/nurhudajoantama/hmauto/internal/health"
 	"github.com/nurhudajoantama/hmauto/internal/instrumentation"
 	"github.com/nurhudajoantama/hmauto/internal/middleware"
-	internalredis "github.com/nurhudajoantama/hmauto/internal/redis"
 	"github.com/nurhudajoantama/hmauto/internal/rabbitmq"
+	internalredis "github.com/nurhudajoantama/hmauto/internal/redis"
 	"golang.org/x/sync/errgroup"
 
 	log "github.com/rs/zerolog/log"
@@ -54,6 +47,9 @@ func main() {
 	cfg, err := config.InitializeConfig(configPath)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load config")
+	}
+	if cfg.Security.BearerToken == "" {
+		log.Fatal().Msg("security.bearerToken must be set")
 	}
 
 	// Initialize Sentry (before everything else)
@@ -84,14 +80,9 @@ func main() {
 
 	rateLimiter := middleware.NewRateLimiter(cfg.Security.GetRateLimitPerMin(), time.Minute, cfg.Security.GetRateLimitBurst())
 
-	// API key store (Redis-backed)
-	keyStore := apikey.NewRedisStore(rdb, cfg.GetRedisKeyPrefix())
-
 	// Initialize server
 	serverConfig := &server.ServerConfig{
-		KeyStore:       keyStore,
-		AdminKey:       cfg.Security.AdminKey,
-		EnableAuth:     cfg.Security.EnableAuth,
+		BearerToken:    cfg.Security.BearerToken,
 		MaxRequestSize: cfg.Security.GetMaxRequestSize(),
 		RateLimiter:    rateLimiter,
 	}
@@ -111,14 +102,9 @@ func main() {
 	hmsttService := hmstt.NewService(hmsttStore, hmsttEvent)
 	hmstt.RegisterHandlers(srv, hmsttService)
 
-	// Admin API key management
-	apikeyService := hmapikey.NewService(keyStore)
-	hmapikey.RegisterHandlers(srv, apikeyService)
-
 	// MCP server
 	mcpSrv := server.NewMCPServer(cfg.MCP.Addr(), &server.MCPServerConfig{
-		KeyStore:   keyStore,
-		EnableAuth: cfg.Security.EnableAuth,
+		BearerToken: cfg.Security.BearerToken,
 	})
 	hmstt.RegisterMCPTools(mcpSrv.GetServer(), hmsttService)
 

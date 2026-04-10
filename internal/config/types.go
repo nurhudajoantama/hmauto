@@ -43,8 +43,7 @@ func (m MQTT) BrokerURL() string {
 }
 
 type Security struct {
-	AdminKey        string `yaml:"adminKey"`
-	EnableAuth      bool   `yaml:"enableAuth"`
+	BearerToken     string `yaml:"bearerToken"`
 	MaxRequestSize  int64  `yaml:"maxRequestSize"`  // in bytes
 	RateLimitPerMin int    `yaml:"rateLimitPerMin"` // requests per minute
 	RateLimitBurst  int    `yaml:"rateLimitBurst"`  // max burst size

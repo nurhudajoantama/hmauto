@@ -1,11 +1,11 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strings"
 
-	"github.com/nurhudajoantama/hmauto/internal/apikey"
 	"github.com/rs/zerolog/hlog"
 )
 
@@ -27,11 +27,16 @@ func extractBearer(r *http.Request) (string, bool) {
 	return parts[1], true
 }
 
-// APIKeyAuth middleware validates API keys via the apikey.Store (Redis-backed).
-func APIKeyAuth(store apikey.Store) func(http.Handler) http.Handler {
+func BearerTokenAuth(expectedToken string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			l := hlog.FromRequest(r)
+
+			if expectedToken == "" {
+				l.Error().Msg("Bearer token is not configured")
+				writeJSONUnauthorized(w)
+				return
+			}
 
 			key, ok := extractBearer(r)
 			if !ok {
@@ -40,44 +45,13 @@ func APIKeyAuth(store apikey.Store) func(http.Handler) http.Handler {
 				return
 			}
 
-			valid, err := store.ValidateKey(r.Context(), key)
-			if err != nil {
-				l.Error().Err(err).Msg("API key validation error")
-				writeJSONUnauthorized(w)
-				return
-			}
-			if !valid {
-				l.Warn().Msg("Invalid API key")
+			if subtle.ConstantTimeCompare([]byte(key), []byte(expectedToken)) != 1 {
+				l.Warn().Msg("Invalid bearer token")
 				writeJSONUnauthorized(w)
 				return
 			}
 
-			l.Debug().Msg("API key validated successfully")
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-// AdminKeyAuth middleware validates the admin key against the config value only (no Redis).
-func AdminKeyAuth(adminKey string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			l := hlog.FromRequest(r)
-
-			key, ok := extractBearer(r)
-			if !ok {
-				l.Warn().Msg("Missing or malformed Authorization header (admin)")
-				writeJSONUnauthorized(w)
-				return
-			}
-
-			if key != adminKey {
-				l.Warn().Msg("Invalid admin key")
-				writeJSONUnauthorized(w)
-				return
-			}
-
-			l.Debug().Msg("Admin key validated successfully")
+			l.Debug().Msg("Bearer token validated successfully")
 			next.ServeHTTP(w, r)
 		})
 	}

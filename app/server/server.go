@@ -7,7 +7,6 @@ import (
 
 	sentryhttp "github.com/getsentry/sentry-go/http"
 	"github.com/gorilla/mux"
-	"github.com/nurhudajoantama/hmauto/internal/apikey"
 	"github.com/nurhudajoantama/hmauto/internal/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/hlog"
@@ -18,9 +17,7 @@ import (
 
 // ServerConfig holds configuration for the server.
 type ServerConfig struct {
-	KeyStore       apikey.Store
-	AdminKey       string
-	EnableAuth     bool
+	BearerToken    string
 	MaxRequestSize int64
 	RateLimiter    *middleware.RateLimiter
 }
@@ -37,7 +34,6 @@ type Server struct {
 func NewWithConfig(addr string, config *ServerConfig) *Server {
 	if config == nil {
 		config = &ServerConfig{
-			EnableAuth:     false,
 			MaxRequestSize: 1024 * 1024,
 		}
 	}
@@ -91,18 +87,12 @@ func (s *Server) GetConfig() *ServerConfig {
 	return s.config
 }
 
-// ApplyAuthMiddleware attaches Redis-backed API key auth to a subrouter.
 func (s *Server) ApplyAuthMiddleware(subrouter *mux.Router) {
-	if s.config != nil && s.config.EnableAuth && s.config.KeyStore != nil {
-		subrouter.Use(middleware.APIKeyAuth(s.config.KeyStore))
+	if s.config == nil {
+		subrouter.Use(middleware.BearerTokenAuth(""))
+		return
 	}
-}
-
-// ApplyAdminMiddleware attaches config-only admin key auth to a subrouter.
-func (s *Server) ApplyAdminMiddleware(subrouter *mux.Router) {
-	if s.config != nil && s.config.AdminKey != "" {
-		subrouter.Use(middleware.AdminKeyAuth(s.config.AdminKey))
-	}
+	subrouter.Use(middleware.BearerTokenAuth(s.config.BearerToken))
 }
 
 // Start runs the HTTP server.

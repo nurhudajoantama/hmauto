@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/nurhudajoantama/hmauto/internal/apikey"
 	"github.com/nurhudajoantama/hmauto/internal/middleware"
 	"github.com/rs/zerolog/hlog"
 	"github.com/rs/zerolog/log"
@@ -14,17 +13,15 @@ import (
 
 // MCPServer wraps the MCP server with auth and HTTP lifecycle.
 type MCPServer struct {
-	server     *mcp.Server
-	httpServer *http.Server
-	addr       string
-	keyStore   apikey.Store
-	enableAuth bool
+	server      *mcp.Server
+	httpServer  *http.Server
+	addr        string
+	bearerToken string
 }
 
 // MCPServerConfig holds configuration for the MCP server.
 type MCPServerConfig struct {
-	KeyStore   apikey.Store
-	EnableAuth bool
+	BearerToken string
 }
 
 // NewMCPServer creates a new MCP server.
@@ -34,10 +31,9 @@ func NewMCPServer(addr string, cfg *MCPServerConfig) *MCPServer {
 	}
 	s := mcp.NewServer(&mcp.Implementation{Name: "hmauto", Version: "1.0.0"}, nil)
 	return &MCPServer{
-		server:     s,
-		addr:       addr,
-		keyStore:   cfg.KeyStore,
-		enableAuth: cfg.EnableAuth,
+		server:      s,
+		addr:        addr,
+		bearerToken: cfg.BearerToken,
 	}
 }
 
@@ -54,9 +50,7 @@ func (m *MCPServer) Start(ctx context.Context) error {
 
 	var h http.Handler = mcpHandler
 	h = hlog.NewHandler(log.Logger)(h)
-	if m.enableAuth && m.keyStore != nil {
-		h = middleware.APIKeyAuth(m.keyStore)(h)
-	}
+	h = middleware.BearerTokenAuth(m.bearerToken)(h)
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", h)
