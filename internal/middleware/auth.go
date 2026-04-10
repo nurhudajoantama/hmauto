@@ -56,3 +56,33 @@ func BearerTokenAuth(expectedToken string) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+func QueryTokenAuth(expectedToken string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			l := hlog.FromRequest(r)
+
+			if expectedToken == "" {
+				l.Error().Msg("Query token is not configured")
+				writeJSONUnauthorized(w)
+				return
+			}
+
+			token := r.URL.Query().Get("token")
+			if token == "" {
+				l.Warn().Msg("Missing MCP token query parameter")
+				writeJSONUnauthorized(w)
+				return
+			}
+
+			if subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) != 1 {
+				l.Warn().Msg("Invalid MCP query token")
+				writeJSONUnauthorized(w)
+				return
+			}
+
+			l.Debug().Msg("MCP query token validated successfully")
+			next.ServeHTTP(w, r)
+		})
+	}
+}

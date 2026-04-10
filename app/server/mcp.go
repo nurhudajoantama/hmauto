@@ -13,15 +13,15 @@ import (
 
 // MCPServer wraps the MCP server with auth and HTTP lifecycle.
 type MCPServer struct {
-	server      *mcp.Server
-	httpServer  *http.Server
-	addr        string
-	bearerToken string
+	server     *mcp.Server
+	httpServer *http.Server
+	addr       string
+	token      string
 }
 
 // MCPServerConfig holds configuration for the MCP server.
 type MCPServerConfig struct {
-	BearerToken string
+	Token string
 }
 
 // NewMCPServer creates a new MCP server.
@@ -31,9 +31,9 @@ func NewMCPServer(addr string, cfg *MCPServerConfig) *MCPServer {
 	}
 	s := mcp.NewServer(&mcp.Implementation{Name: "hmauto", Version: "1.0.0"}, nil)
 	return &MCPServer{
-		server:      s,
-		addr:        addr,
-		bearerToken: cfg.BearerToken,
+		server: s,
+		addr:   addr,
+		token:  cfg.Token,
 	}
 }
 
@@ -50,7 +50,7 @@ func (m *MCPServer) Start(ctx context.Context) error {
 
 	var h http.Handler = mcpHandler
 	h = hlog.NewHandler(log.Logger)(h)
-	h = middleware.BearerTokenAuth(m.bearerToken)(h)
+	h = middleware.QueryTokenAuth(m.token)(h)
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", h)

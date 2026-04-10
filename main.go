@@ -48,8 +48,8 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load config")
 	}
-	if cfg.Security.BearerToken == "" {
-		log.Fatal().Msg("security.bearerToken must be set")
+	if err := cfg.Security.ValidateAuthTokens(); err != nil {
+		log.Fatal().Err(err).Msg("invalid security configuration")
 	}
 
 	// Initialize Sentry (before everything else)
@@ -104,7 +104,7 @@ func main() {
 
 	// MCP server
 	mcpSrv := server.NewMCPServer(cfg.MCP.Addr(), &server.MCPServerConfig{
-		BearerToken: cfg.Security.BearerToken,
+		Token: cfg.Security.MCPToken,
 	})
 	hmstt.RegisterMCPTools(mcpSrv.GetServer(), hmsttService)
 
